@@ -271,7 +271,8 @@
     // A board can remain open while the login/session token changes in
     // another tab or after a server restart.  Fetching the board again gets
     // the current token without discarding the amount the user entered.
-    const url = new URL(form.action, window.location.origin);
+    const formAction = form.getAttribute('action') || window.location.href;
+    const url = new URL(formAction, window.location.origin);
     const day = form.querySelector('input[name="day"]');
     if (day && day.value) url.searchParams.set('day', day.value);
     const res = await window.fetch(url.toString(), {
@@ -310,7 +311,10 @@
       fd.set('action', form.hasAttribute('data-dr-clear-form') ? 'clear_count' : 'save_count');
     }
     try {
-      const res = await fetch(form.action, {
+      // Do not use form.action here: the hidden input named "action" makes
+      // the DOM property resolve to a RadioNodeList instead of the URL.
+      const formAction = form.getAttribute('action') || window.location.href;
+      const res = await fetch(formAction, {
         method:'POST',
         body:fd,
         credentials:'same-origin',

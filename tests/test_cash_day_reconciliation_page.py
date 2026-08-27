@@ -244,3 +244,7 @@ def test_recon_count_forms_include_hidden_action(app, client):
     # JS must not pick the action from whatever field currently has focus.
     assert "document.activeElement && document.activeElement.form === form" not in body
     assert "ev.submitter" in body
+    # The hidden input named "action" shadows the DOM form.action property.
+    # The fetch target must therefore come from the HTML action attribute.
+    assert "form.getAttribute('action')" in body
+    assert "fetch(form.action" not in body
