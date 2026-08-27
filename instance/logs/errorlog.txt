@@ -1213,3 +1213,16 @@ sqlalchemy.exc.IntegrityError: (builtins.Exception) UNIQUE constraint failed: de
 2026-08-27 07:03:53,101 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/user/AMSCOPY9/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
 2026-08-27 07:04:01,446 WARNING [security]: CSRF rejected: endpoint=auth.login ip=127.0.0.1
 2026-08-27 07:04:33,683 WARNING [security]: CSRF rejected: endpoint=reports.daily_reconciliation ip=127.0.0.1
+2026-08-27 11:25:53,830 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/runner/workspace/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 11:27:08,852 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/runner/workspace/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 11:27:15,417 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/runner/workspace/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 11:27:21,494 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/runner/workspace/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 11:27:28,184 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/runner/workspace/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 11:27:33,749 WARNING [security]: CSRF rejected: endpoint=reports.daily_reconciliation ip=127.0.0.1
+2026-08-27 11:27:35,481 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/runner/workspace/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 11:27:42,217 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/runner/workspace/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 11:27:48,618 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/runner/workspace/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 11:27:54,929 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/runner/workspace/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 11:28:00,996 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/runner/workspace/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 11:28:07,569 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/runner/workspace/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
+2026-08-27 11:28:13,657 WARNING [app.services.v44_schema]: v4.4 schema file not found at /home/runner/workspace/v44/SCHEMA_v4_4.sql; falling back to the ORM schema bootstrap.
