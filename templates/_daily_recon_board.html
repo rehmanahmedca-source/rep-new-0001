@@ -264,7 +264,38 @@
     state.className = 'dr-save-state ' + (cls || 'text-muted');
     state.title = title || text || '';
   }
-  async function postForm(form, ev){
+  function isCsrfError(message){
+    return /csrf|token|session expired|log in/i.test(message || '');
+  }
+  async function refreshFormToken(form){
+    // A board can remain open while the login/session token changes in
+    // another tab or after a server restart.  Fetching the board again gets
+    // the current token without discarding the amount the user entered.
+    const url = new URL(form.action, window.location.origin);
+    const day = form.querySelector('input[name="day"]');
+    if (day && day.value) url.searchParams.set('day', day.value);
+    const res = await window.fetch(url.toString(), {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: { 'Accept': 'text/html' }
+    });
+    if (!res.ok) throw new Error('Session expired. Reload the page and log in.');
+    const html = await res.text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const tokenInput = doc.querySelector('input[name="_csrf_token"]');
+    if (!tokenInput || !tokenInput.value) {
+      throw new Error('Session expired. Reload the page and log in.');
+    }
+    let current = form.querySelector('input[name="_csrf_token"]');
+    if (!current) {
+      current = document.createElement('input');
+      current.type = 'hidden';
+      current.name = '_csrf_token';
+      form.appendChild(current);
+    }
+    current.value = tokenInput.value;
+  }
+  async function postForm(form, ev, allowTokenRetry){
     const row = form.closest('[data-dr-row]');
     const state = row ? row.querySelector('[data-dr-save-state]') : null;
     showSaveState(state, 'Saving…', 'text-muted');
@@ -300,7 +331,11 @@
         showSaveState(state, 'Saved', 'text-success');
         window.setTimeout(function(){ if (state && state.textContent === 'Saved') state.textContent = ''; }, 1200);
       } else {
-        const csrfExpired = /csrf|token|session expired|log in/i.test(errMsg);
+        const csrfExpired = isCsrfError(errMsg);
+        if (csrfExpired && allowTokenRetry !== false) {
+          await refreshFormToken(form);
+          return postForm(form, ev, false);
+        }
         showSaveState(state, csrfExpired ? 'Reload page & retry' : 'Error', 'text-danger', errMsg);
         throw new Error(errMsg);
       }
