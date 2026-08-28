@@ -331,7 +331,16 @@ def save_client_payment(
     else:
         raise ValueError("Select Receipt, Refund, or Waive-Off as the payment type.")
 
-    submitted_minor = abs(to_minor(amount, field="Amount"))
+    raw_minor = to_minor(amount, field="Amount")
+    if raw_minor < 0:
+        # Never silently flip the sign. The direction of a payment is chosen
+        # with ``payment_type``, so a negative figure here is always a
+        # mistake - and almost always someone reaching for a refund.
+        raise ValueError(
+            "Amount cannot be negative. Enter a positive amount and choose "
+            "the Refund payment type to pay money back to the client."
+        )
+    submitted_minor = raw_minor
     discount_minor = to_minor(discount, field="Discount")
     if discount_minor < 0:
         raise ValueError("Discount cannot be negative.")

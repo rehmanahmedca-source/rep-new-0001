@@ -4,7 +4,14 @@
 **Repository:** rehmanahmedca-source/rep-new-0001  
 **Branch:** arena/01a046e8-rep-new-0001  
 **Date:** 2026-08-28  
-**Status:** DISCOVERY PHASE - STEP A  
+**Status:** STEP A (DISCOVERY) — ✅ COMPLETE · STEP B (DEEP QA AUDIT) — ✅ COMPLETE  
+
+> **STEP B results:** see [`docs/STEP_B_QA_TEST_REPORT.md`](STEP_B_QA_TEST_REPORT.md)
+> (machine-readable: `docs/step_b_qa_results.json`).
+> 1,022 assertions · 25 full transaction cycles across 5 QA clients ·
+> 140/161 GET routes exercised · **2 defects found and both now fixed** —
+> the audit currently reports **0 failures, 0 open bugs**.
+> Harness: `tools/qa_stepb/`. Regression locks: `tests/test_stepb_qa_invariants.py`.
 
 ---
 
@@ -2618,16 +2625,35 @@ Based on QA_FULL_AUDIT.md:
 
 ## NEXT STEPS
 
-**IMMEDIATE (Today):**
-1. Complete this DISCOVERY REPORT (STEP A)
-2. Begin Phase 1: Emergency Fixes
-3. Restore database from migration artifacts
-4. Fix critical security vulnerabilities
+**COMPLETED:**
+1. ✅ DISCOVERY REPORT (STEP A) — this document
+2. ✅ DEEP QA AUDIT (STEP B) — `docs/STEP_B_QA_TEST_REPORT.md`
+
+**RESOLVED (STEP B findings):**
+1. ✅ `BUG-002` (Critical) — deletion of sales transactions is permanent by design,
+   so the misleading reversible-sounding affordances were removed rather than a
+   soft void reinstated:
+   - deleted `/void_transaction/<type>/<id>` and `/unvoid_transaction/<type>/<id>`;
+   - `/delete_transaction/<type>/<id>` is now the single, honestly named endpoint
+     (`_bills_delete_transaction.py`), and flashes "permanently deleted";
+   - dropped the legacy `/accounts/transactions/<id>/void` alias and repointed its
+     three templates at `accounts.delete_account_transaction`, correcting two
+     confirm dialogs that wrongly said "Permanently delete" for what is actually a
+     reversible soft void.
+   - `/void_audit` is retained: it still serves the entities that genuinely
+     soft-void (Entry, PendingBill, DeliveryRent, SupplierPayment, MaterialReturn).
+2. ✅ `BUG-001` (High) — `save_client_payment` no longer `abs()`-normalises the
+   amount. A negative figure is rejected with a message pointing the user at the
+   Refund payment type. Positive Receipts and negative-stored Refunds are unchanged.
+
+**NEXT:**
+1. Re-run `python -m tools.qa_stepb.run_audit` after any change to sales,
+   payments, stock or ledger logic.
 
 **SHORT-TERM (This Week):**
-1. Complete Phase 1: All critical fixes
-2. Begin Phase 2: Core integrity fixes
-3. Start building Skills Book documentation
+1. Begin Phase 1: Emergency Fixes
+2. Restore database from migration artifacts
+3. Fix critical security vulnerabilities
 
 **MEDIUM-TERM (Next 2 Weeks):**
 1. Complete Phase 2: Core integrity

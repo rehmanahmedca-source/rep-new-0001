@@ -1,7 +1,6 @@
 """Facade for split bills.py."""
 from ._bills_edit_ledger_transaction import edit_ledger_transaction  # noqa
-from ._bills_void_transaction import void_transaction, delete_transaction  # noqa
-from ._bills_unvoid_transaction import unvoid_transaction  # noqa
+from ._bills_delete_transaction import delete_transaction  # noqa
 from ._bills_view_bill import view_bill  # noqa
 from ._bills_download_invoice import download_invoice  # noqa
 from ._bills_delete_bill import delete_bill  # noqa

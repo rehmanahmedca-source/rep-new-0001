@@ -85,7 +85,7 @@
                     </td>
                     <td class="text-end">
                         {% if not tx.is_void and not tx.reconciliation_id and tx.source_type != 'AccountReconciliation' %}
-                        <form method="POST" action="{{ url_for('accounts.void_transaction', tx_id=tx.id) }}" style="display:inline" onsubmit="return confirm('Reverse this transaction? The original row and audit history will be retained.');">
+                        <form method="POST" action="{{ url_for('accounts.delete_account_transaction', tx_id=tx.id) }}" style="display:inline" onsubmit="return confirm('Reverse this transaction? The original row and audit history will be retained.');">
                             <button class="btn btn-sm btn-outline-danger" title="Reverse / soft-delete"><i class="bi bi-arrow-counterclockwise"></i></button>
                         </form>
                         {% elif tx.reconciliation_id %}<span class="badge bg-secondary">Immutable</span>
