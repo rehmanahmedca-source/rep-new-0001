@@ -50,13 +50,6 @@ def transfers():
                            search=search, total_amount=total_amount, total_count=total_count)
 
 
-@accounts_bp.route('/transactions/<int:tx_id>/void', methods=['POST'])
-@login_required
-def void_transaction(tx_id):
-    """Legacy URL — permanently deletes the account entry."""
-    return delete_account_transaction(tx_id)
-
-
 @accounts_bp.route('/transactions/<int:tx_id>/delete', methods=['POST'])
 @login_required
 def delete_account_transaction(tx_id):

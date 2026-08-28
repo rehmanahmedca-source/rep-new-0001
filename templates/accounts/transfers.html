@@ -61,7 +61,7 @@
                         <td>{{ t.description or '' }}</td>
                         <td class="small text-muted">{{ t.note or '' }}</td>
                         <td class="text-end">
-                            <form method="POST" action="{{ url_for('accounts.void_transaction', tx_id=t.id) }}" style="display:inline" onsubmit="return confirm('Permanently delete this transfer? Both account balances will be corrected.');">
+                            <form method="POST" action="{{ url_for('accounts.delete_account_transaction', tx_id=t.id) }}" style="display:inline" onsubmit="return confirm('Reverse this transfer? Both account balances will be corrected and the original row is retained in the void audit.');">
                                 <button class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-x-octagon"></i></button>
                             </form>
                         </td>

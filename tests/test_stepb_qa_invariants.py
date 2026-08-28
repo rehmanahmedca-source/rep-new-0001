@@ -218,45 +218,75 @@ def test_resubmitting_the_same_payment_does_not_double_post(app, client, erp):
 
 
 # ---------------------------------------------------------------------------
-# Confirmed defects - pinned so a fix is noticed
+# BUG-001 (fixed): a negative amount must be rejected, not sign-flipped
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG-001: payments_crud.py:334 abs()-normalises the amount, so a "
-           "negative Receipt is silently stored as a positive one instead of "
-           "being rejected. Remove this xfail when the validation is added.",
-)
 def test_negative_payment_amount_is_rejected(app, client, erp):
     with app.app_context():
         before = Payment.query.count()
-    client.post("/add_payment", data={
+    resp = client.post("/add_payment", data={
         "client_code": "REG-01", "amount": "-500", "method": "Cash",
         "payment_type": "Receipt", "payment_account_id": str(erp["acc_id"]),
         "manual_bill_no": "REG-NEG-1",
+    }, follow_redirects=True)
+    with app.app_context():
+        assert Payment.query.count() == before, "a negative Receipt was accepted"
+    # And the user is told what to do instead.
+    body = resp.get_data(as_text=True).lower()
+    assert "refund" in body, "the error should point the user at the Refund payment type"
+
+
+def test_positive_receipt_still_saves_and_refund_is_negative(app, client, erp):
+    """The BUG-001 guard must not break the legitimate paths."""
+    client.post("/add_payment", data={
+        "client_code": "REG-01", "amount": "500", "method": "Cash",
+        "payment_type": "Receipt", "payment_account_id": str(erp["acc_id"]),
+        "manual_bill_no": "REG-POS-1",
+    })
+    client.post("/add_payment", data={
+        "client_code": "REG-01", "amount": "200", "method": "Cash",
+        "payment_type": "Refund", "payment_account_id": str(erp["acc_id"]),
+        "manual_bill_no": "REG-REF-1",
     })
     with app.app_context():
-        assert Payment.query.count() == before, (
-            "a negative Receipt was accepted")
+        receipt = Payment.query.filter(Payment.manual_bill_no.like("%REG-POS-1")).first()
+        refund = Payment.query.filter(Payment.manual_bill_no.like("%REG-REF-1")).first()
+        assert receipt is not None and float(receipt.amount) == 500.0
+        assert refund is not None and float(refund.amount) == -200.0, (
+            "a Refund should still store a negative amount")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG-002: /void_transaction is aliased to hard_delete_transaction, so "
-           "the row is destroyed and /unvoid_transaction cannot restore it. "
-           "Remove this xfail when voiding becomes a soft void.",
-)
-def test_voiding_a_booking_is_reversible(app, client, erp):
+# ---------------------------------------------------------------------------
+# BUG-002 (fixed): the misleading void/unvoid pair is gone; delete is honest
+# ---------------------------------------------------------------------------
+def test_misleading_void_and_unvoid_routes_are_removed(app):
+    """Deletion is permanent, so nothing may advertise a reversible 'void'."""
+    rules = {str(r) for r in app.url_map.iter_rules()}
+    assert not [r for r in rules if r.startswith("/void_transaction")], (
+        "/void_transaction still exists and implies a reversible void")
+    assert not [r for r in rules if r.startswith("/unvoid_transaction")], (
+        "/unvoid_transaction still exists but can never restore a hard delete")
+    assert "/delete_transaction/<string:type>/<int:id>" in rules, (
+        "the honest delete endpoint must remain")
+    assert not [r for r in rules if r.endswith("/void") and "/accounts/" in r], (
+        "the legacy accounts /void alias should be gone")
+
+
+def test_deleting_a_booking_removes_it_and_reverses_the_ledger(app, client, erp):
     _cycle(client, erp, 1)
     with app.app_context():
         bk = Booking.query.first()
-        bid, before = bk.id, _balance("REG CLIENT")
+        bid = bk.id
+        amount, paid = float(bk.amount), float(bk.paid_amount)
+        before = _balance("REG CLIENT")
 
-    client.post(f"/void_transaction/Booking/{bid}", data={"reason": "regression"})
-    with app.app_context():
-        row = db.session.get(Booking, bid)
-        assert row is not None and row.is_void is True, (
-            "void destroyed the row instead of flagging it")
+    client.post(f"/delete_transaction/Booking/{bid}", data={"reason": "regression"})
 
-    client.post(f"/unvoid_transaction/Booking/{bid}", data={})
     with app.app_context():
-        assert _balance("REG CLIENT") == before, "unvoid did not restore the balance"
+        assert db.session.get(Booking, bid) is None, "delete should remove the row"
+        # The receivable it carried must be reversed, not stranded.
+        assert _balance("REG CLIENT") == round(before - (amount - paid), 2), (
+            "deleting a booking did not reverse its outstanding contribution")
+        # ...and it must not leave orphaned children behind.
+        from models import BookingItem
+        assert BookingItem.query.filter_by(booking_id=bid).count() == 0, (
+            "orphaned booking items left after delete")

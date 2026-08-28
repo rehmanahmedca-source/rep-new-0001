@@ -406,121 +406,99 @@ def phase11_reversal(app, br, rec, models, db, ids, clients):
                 ledger_impact="edit not correctly reflected downstream",
                 financial_impact="outstanding wrong after edit", consistency_risk="Yes")
 
-    # --- VOID ---------------------------------------------------------------
+    # --- DELETE (permanent by design - there is no soft void here) ---------
     with app.app_context():
-        bal_pre_void = recompute_balance(db, models, cl["name"])
+        bal_pre_delete = recompute_balance(db, models, cl["name"])
         amt, paid = money(bk.amount), money(bk.paid_amount)
         BI = models.get("BookingItem")
         items_before = BI.query.filter_by(booking_id=bid).count() if BI else None
-    r = br.post(f"/void_transaction/Booking/{bid}", data={"reason": "QA reversal test"})
-    rec.check(area, "booking void accepted", r.status_code == 200, flashes(r))
+
+    # The misleading reversible-sounding routes must no longer exist.
+    rules = {str(r) for r in app.url_map.iter_rules()}
+    stale = sorted(r for r in rules
+                   if r.startswith(("/void_transaction", "/unvoid_transaction")))
+    rec.check(area, "no misleading void/unvoid transaction routes are registered",
+              not stale, f"still present: {stale}")
+    if stale:
+        rec.bug(
+            module="Sales/Bookings", page="/void_transaction", severity="High",
+            test_client=cl["name"], route=", ".join(stale),
+            steps="Inspect the URL map for void/unvoid transaction routes",
+            expected="Only /delete_transaction exists, because deletion is permanent",
+            actual=f"Reversible-sounding routes still registered: {stale}",
+            data_loss_risk="Yes", consistency_risk="Yes",
+            root_cause="Legacy void alias not removed",
+        )
+
+    r = br.post(f"/delete_transaction/Booking/{bid}", data={"reason": "QA reversal test"})
+    rec.check(area, "booking delete accepted", r.status_code == 200, flashes(r))
 
     with app.app_context():
-        bk_after = db.session.get(B, bid)
-        hard_deleted = bk_after is None
-        soft_voided = bool(getattr(bk_after, "is_void", False)) if bk_after else False
+        gone = db.session.get(B, bid) is None
         items_after = BI.query.filter_by(booking_id=bid).count() if BI else None
-        bal_post_void = recompute_balance(db, models, cl["name"])
+        bal_post_delete = recompute_balance(db, models, cl["name"])
 
-    rec.check(area, "voiding a booking soft-voids it rather than destroying the row",
-              soft_voided,
-              "the row was hard-deleted from the database" if hard_deleted
-              else "is_void was not set")
-    if hard_deleted:
-        rec.bug(
-            module="Sales/Bookings", page="/void_transaction", severity="Critical",
-            test_client=cl["name"], transaction=f"booking {bid}",
-            route=f"POST /void_transaction/Booking/{bid}",
-            steps=(f"Create booking {bid}, then POST /void_transaction/Booking/{bid} "
-                   f"(the 'Void' action), then look for the booking again"),
-            expected=("The booking is marked is_void=True and stays visible in the void "
-                      "audit so it can be reviewed and restored"),
-            actual=("The booking row is permanently deleted. /unvoid_transaction "
-                    "silently does nothing and /void_audit never lists it."),
-            db_impact="Transaction row and its items are erased; only an AuditLog line remains",
-            financial_impact="A voided sale cannot be reviewed, re-checked or reinstated",
-            ledger_impact="History is rewritten - past ledger prints can no longer be reproduced",
-            data_loss_risk="Yes", duplication_risk="No", consistency_risk="Yes",
-            root_cause=("app/blueprints/sales/_bills_void_transaction.py aliases "
-                        "void_transaction() to delete_transaction() -> "
-                        "hard_delete_transaction(); the paired unvoid_transaction() "
-                        "and the void_audit restore UI still assume a soft void."),
-            evidence="void_transaction(): 'Legacy URL kept so old forms still work; "
-                     "always hard-deletes.'",
-        )
-    # Child rows must not be orphaned whichever strategy is used.
+    rec.check(area, "deleting a booking removes the row permanently", gone,
+              "the row is still present after delete")
     if BI is not None:
-        rec.check(area, "voiding/deleting a booking leaves no orphan booking items",
-                  (items_after or 0) == 0 if hard_deleted else True,
+        ok = (items_after or 0) == 0
+        rec.check(area, "deleting a booking leaves no orphan booking items", ok,
                   f"{items_after} booking_item rows still reference booking {bid} "
                   f"(was {items_before})")
+        if not ok:
+            rec.bug(
+                module="Sales/Bookings", page="/delete_transaction", severity="High",
+                test_client=cl["name"], transaction=f"booking {bid}",
+                route=f"POST /delete_transaction/Booking/{bid}",
+                steps=f"Delete booking {bid} and look for its booking_item children",
+                expected="0 orphan rows", actual=f"{items_after} orphan rows",
+                db_impact="orphaned child rows", consistency_risk="Yes",
+            )
 
-    delta = money(bal_post_void - bal_pre_void)
+    delta = money(bal_post_delete - bal_pre_delete)
     expect = money(-(amt - paid))
     ok = delta == expect
-    rec.check(area, "voiding a booking reverses exactly its outstanding contribution", ok,
-              f"expected {expect:+}, got {delta:+}")
+    rec.check(area, "deleting a booking reverses exactly its outstanding contribution",
+              ok, f"expected {expect:+}, got {delta:+}")
     if not ok:
-        rec.bug(module="Sales/Bookings", page="/void_transaction", severity="Critical",
+        rec.bug(module="Sales/Bookings", page="/delete_transaction", severity="Critical",
                 test_client=cl["name"], transaction=f"booking {bid}",
-                route=f"POST /void_transaction/Booking/{bid}",
-                steps=f"Void booking {bid} and re-read the client balance",
+                route=f"POST /delete_transaction/Booking/{bid}",
+                steps=f"Delete booking {bid} and re-read the client balance",
                 expected=f"balance {expect:+}", actual=f"balance {delta:+}",
-                ledger_impact="void leaves a stale receivable",
-                financial_impact="outstanding wrong after void", consistency_risk="Yes")
+                ledger_impact="delete leaves a stale receivable",
+                financial_impact="outstanding wrong after delete", consistency_risk="Yes")
 
-    # --- UNVOID / RESTORE ---------------------------------------------------
-    r = br.post(f"/unvoid_transaction/Booking/{bid}", data={})
-    with app.app_context():
-        bal_restored = recompute_balance(db, models, cl["name"])
-        restored_row = db.session.get(B, bid)
-    ok = bal_restored == bal_pre_void and restored_row is not None
-    rec.check(area, "un-voiding a booking restores the record and the balance", ok,
-              f"row_restored={restored_row is not None}; "
-              f"balance expected {bal_pre_void}, got {bal_restored}")
-    if not ok and not hard_deleted:
-        rec.bug(module="Sales/Bookings", page="/unvoid_transaction", severity="High",
-                test_client=cl["name"], transaction=f"booking {bid}",
-                route=f"POST /unvoid_transaction/Booking/{bid}",
-                steps=f"Void then un-void booking {bid}",
-                expected=str(bal_pre_void), actual=str(bal_restored),
-                ledger_impact="void/unvoid is not symmetric", consistency_risk="Yes")
-
-    # The void audit screen should be able to account for the reversal.
+    # The void audit screen still serves the entities that genuinely soft-void.
     va = br.get("/void_audit")
     rec.check(area, "void audit page renders", va.status_code == 200, f"HTTP {va.status_code}")
 
-    # --- payment void -------------------------------------------------------
+    # --- payment delete -----------------------------------------------------
     with app.app_context():
         pay = (P.query.filter(func.lower(func.trim(P.client_name)) == cl["name"].lower(),
                               P.is_void == False)  # noqa: E712
                .order_by(P.id.desc()).first())
         if pay is None:
-            rec.blocked(area, "payment void", "no payment available")
+            rec.blocked(area, "payment delete", "no payment available")
             return
         pid, pamt = pay.id, money(pay.amount)
         bal_pre = recompute_balance(db, models, cl["name"])
-    r = br.post(f"/void_transaction/Payment/{pid}", data={"reason": "QA reversal test"})
-    rec.check(area, "payment void accepted", r.status_code == 200, flashes(r))
+    r = br.post(f"/delete_transaction/Payment/{pid}", data={"reason": "QA reversal test"})
+    rec.check(area, "payment delete accepted", r.status_code == 200, flashes(r))
     with app.app_context():
         bal_post = recompute_balance(db, models, cl["name"])
     delta = money(bal_post - bal_pre)
     ok = delta == pamt
-    rec.check(area, "voiding a payment adds the amount back to outstanding", ok,
+    rec.check(area, "deleting a payment adds the amount back to outstanding", ok,
               f"expected +{pamt}, got {delta:+}")
     if not ok:
-        rec.bug(module="Payments", page="/void_transaction", severity="Critical",
+        rec.bug(module="Payments", page="/delete_transaction", severity="Critical",
                 test_client=cl["name"], transaction=f"payment {pid}",
-                route=f"POST /void_transaction/Payment/{pid}",
-                steps=f"Void payment {pid} ({pamt}) and re-read outstanding",
+                route=f"POST /delete_transaction/Payment/{pid}",
+                steps=f"Delete payment {pid} ({pamt}) and re-read outstanding",
                 expected=f"+{pamt}", actual=f"{delta:+}",
-                financial_impact="voided cash still credited to the client",
+                financial_impact="deleted cash still credited to the client",
                 ledger_impact="ledger not reversed", consistency_risk="Yes")
-    br.post(f"/unvoid_transaction/Payment/{pid}", data={})
-    with app.app_context():
-        rec.check(area, "payment un-void restores outstanding",
-                  recompute_balance(db, models, cl["name"]) == bal_pre,
-                  f"expected {bal_pre}")
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 # AMS ERP — STEP B: DEEP HUMAN-LIKE QA TEST REPORT
 
-**Generated:** 2026-08-28 06:46  
-**Duration:** 17.6s  
+**Generated:** 2026-08-28 07:07  
+**Duration:** 17.5s  
 **Harness:** `tools/qa_stepb/` (drives the real Flask routes, real ORM, throw-away SQLite)  
 **Predecessor:** STEP A discovery report — `docs/SKILLS_BOOK.md` (complete)  
 
@@ -21,9 +21,9 @@
 | Pages failed | 0 |
 | Pages blocked (no sample record to instantiate) | 17 |
 | Pages skipped (destructive by policy) | 4 |
-| Total assertions executed | 1023 |
-| Assertions passed | 964 |
-| Assertions failed | 3 |
+| Total assertions executed | 1022 |
+| Assertions passed | 966 |
+| Assertions failed | 0 |
 | Assertions blocked | 48 |
 | Transaction workflows executed | 125 |
 | Repeat cycles completed | 25 |
@@ -33,11 +33,13 @@
 
 | Severity | Count |
 |---|---|
-| Critical | 1 |
-| High | 1 |
+| Critical | 0 |
+| High | 0 |
 | Medium | 0 |
 | Low | 0 |
-| **Total** | 2 |
+| **Total** | 0 |
+
+No defects were reproduced by this audit.
 
 ## REPEAT TEST RESULTS (the mandatory five-times rule)
 
@@ -56,10 +58,10 @@ Each cycle = GRN (stock in) → Booking → Dispatch (stock out) → Payment →
 | Area | Result | Evidence |
 |---|---|---|
 | Inventory Consistency | ✅ CONSISTENT | 183 assertions passed |
-| Client Ledger Consistency | ❌ FAILED | 1/145 assertions failed |
+| Client Ledger Consistency | ✅ CONSISTENT | 144 assertions passed |
 | Account Balance Consistency | ✅ CONSISTENT | 66 assertions passed |
-| Payment Consistency | ❌ FAILED | 1/124 assertions failed |
-| Booking Consistency | ❌ FAILED | 2/169 assertions failed |
+| Payment Consistency | ✅ CONSISTENT | 123 assertions passed |
+| Booking Consistency | ✅ CONSISTENT | 168 assertions passed |
 | Sales Consistency | ✅ CONSISTENT | 123 assertions passed |
 | Dashboard Consistency | ✅ CONSISTENT | 12 assertions passed |
 | Report Consistency | ✅ CONSISTENT | 26 assertions passed |
@@ -67,59 +69,7 @@ Each cycle = GRN (stock in) → Booking → Dispatch (stock out) → Payment →
 
 ## DETAILED BUG REPORTS
 
-### BUG-001 — [High] Payments
-
-| Field | Detail |
-|---|---|
-| Module | Payments |
-| Page | /add_payment |
-| Severity | High |
-| Test Client | QA TEST CLIENT 01 |
-| Transaction | - |
-| Route / API | POST /add_payment |
-| Reproduction Steps | Submit a payment with a negative amount (-500) and check the stored row |
-| Expected Result | Rejected with a validation error |
-| Actual Result | Payment saved, and the amount was silently changed from -500 to 500.0 |
-| Database Impact | - |
-| Financial Impact | A user entering a negative figure (intending a refund or a correction) has it silently converted into a positive receipt, so cash and the client credit are both overstated. The correct route is payment_type='Refund', but nothing tells the user that. |
-| Inventory Impact | - |
-| Ledger Impact | client credited instead of debited |
-| Data Loss Risk | No |
-| Duplication Risk | No |
-| Consistency Risk | Yes |
-| Root Cause Suspected | app/services/payments_crud.py:334 - `submitted_minor = abs(to_minor(amount, field='Amount'))` discards the sign, and the direction is taken only from payment_type. A negative Receipt is therefore silently normalised to a positive one instead of being rejected. |
-| Status | Reproduced |
-
-### BUG-002 — [Critical] Sales/Bookings
-
-| Field | Detail |
-|---|---|
-| Module | Sales/Bookings |
-| Page | /void_transaction |
-| Severity | Critical |
-| Test Client | QA TEST CLIENT 02 |
-| Transaction | booking 10 |
-| Route / API | POST /void_transaction/Booking/10 |
-| Reproduction Steps | Create booking 10, then POST /void_transaction/Booking/10 (the 'Void' action), then look for the booking again |
-| Expected Result | The booking is marked is_void=True and stays visible in the void audit so it can be reviewed and restored |
-| Actual Result | The booking row is permanently deleted. /unvoid_transaction silently does nothing and /void_audit never lists it. |
-| Database Impact | Transaction row and its items are erased; only an AuditLog line remains |
-| Financial Impact | A voided sale cannot be reviewed, re-checked or reinstated |
-| Inventory Impact | - |
-| Ledger Impact | History is rewritten - past ledger prints can no longer be reproduced |
-| Data Loss Risk | Yes |
-| Duplication Risk | No |
-| Consistency Risk | Yes |
-| Root Cause Suspected | app/blueprints/sales/_bills_void_transaction.py aliases void_transaction() to delete_transaction() -> hard_delete_transaction(); the paired unvoid_transaction() and the void_audit restore UI still assume a soft void. |
-| Status | Reproduced |
-
-<details><summary>Evidence</summary>
-
-```
-void_transaction(): 'Legacy URL kept so old forms still work; always hard-deletes.'
-```
-
-</details>
+_None._
 
 ## TEST COVERAGE TRACKER
 
@@ -147,14 +97,11 @@ _All items in this area passed._
 
 _All items in this area passed._
 
-### Phase11-Reversal — **FAILED**
+### Phase11-Reversal — **PASSED**
 
-`10 passed · 2 failed · 0 blocked · 0 skipped`
+`11 passed · 0 failed · 0 blocked · 0 skipped`
 
-| Status | Item | Detail |
-|---|---|---|
-| FAILED | voiding a booking soft-voids it rather than destroying the row | the row was hard-deleted from the database |
-| FAILED | un-voiding a booking restores the record and the balance | row_restored=False; balance expected 75000.0, got 62000.0 |
+_All items in this area passed._
 
 ### Phase12-Filters — **PASSED**
 
@@ -198,13 +145,11 @@ _All items in this area passed._
 
 _All items in this area passed._
 
-### Phase5-Forms — **FAILED**
+### Phase5-Forms — **PASSED**
 
-`12 passed · 1 failed · 0 blocked · 0 skipped`
+`13 passed · 0 failed · 0 blocked · 0 skipped`
 
-| Status | Item | Detail |
-|---|---|---|
-| FAILED | add_payment handles negative amount | saved=True stored=500.0 expected_saved=False; flash: Payment received successfully. — by Admin |
+_All items in this area passed._
 
 ### Phase9-Persistence — **PASSED**
 
@@ -259,5 +204,5 @@ Additionally **not** covered by this harness, and therefore not claimed as worki
 
 ---
 
-**Verdict:** 3 failing assertions and 2 reproduced defects across 1023 checks and 25 full transaction cycles.
+**Verdict:** 0 failing assertions and 0 reproduced defects across 1022 checks and 25 full transaction cycles.
 

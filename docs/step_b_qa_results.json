@@ -1,50 +1,5 @@
 {
-  "bugs": [
-    {
-      "bug_id": "BUG-001",
-      "module": "Payments",
-      "page": "/add_payment",
-      "severity": "High",
-      "test_client": "QA TEST CLIENT 01",
-      "transaction": "-",
-      "steps": "Submit a payment with a negative amount (-500) and check the stored row",
-      "expected": "Rejected with a validation error",
-      "actual": "Payment saved, and the amount was silently changed from -500 to 500.0",
-      "route": "POST /add_payment",
-      "db_impact": "-",
-      "financial_impact": "A user entering a negative figure (intending a refund or a correction) has it silently converted into a positive receipt, so cash and the client credit are both overstated. The correct route is payment_type='Refund', but nothing tells the user that.",
-      "inventory_impact": "-",
-      "ledger_impact": "client credited instead of debited",
-      "data_loss_risk": "No",
-      "duplication_risk": "No",
-      "consistency_risk": "Yes",
-      "root_cause": "app/services/payments_crud.py:334 - `submitted_minor = abs(to_minor(amount, field='Amount'))` discards the sign, and the direction is taken only from payment_type. A negative Receipt is therefore silently normalised to a positive one instead of being rejected.",
-      "evidence": "",
-      "status": "Reproduced"
-    },
-    {
-      "bug_id": "BUG-002",
-      "module": "Sales/Bookings",
-      "page": "/void_transaction",
-      "severity": "Critical",
-      "test_client": "QA TEST CLIENT 02",
-      "transaction": "booking 10",
-      "steps": "Create booking 10, then POST /void_transaction/Booking/10 (the 'Void' action), then look for the booking again",
-      "expected": "The booking is marked is_void=True and stays visible in the void audit so it can be reviewed and restored",
-      "actual": "The booking row is permanently deleted. /unvoid_transaction silently does nothing and /void_audit never lists it.",
-      "route": "POST /void_transaction/Booking/10",
-      "db_impact": "Transaction row and its items are erased; only an AuditLog line remains",
-      "financial_impact": "A voided sale cannot be reviewed, re-checked or reinstated",
-      "inventory_impact": "-",
-      "ledger_impact": "History is rewritten - past ledger prints can no longer be reproduced",
-      "data_loss_risk": "Yes",
-      "duplication_risk": "No",
-      "consistency_risk": "Yes",
-      "root_cause": "app/blueprints/sales/_bills_void_transaction.py aliases void_transaction() to delete_transaction() -> hard_delete_transaction(); the paired unvoid_transaction() and the void_audit restore UI still assume a soft void.",
-      "evidence": "void_transaction(): 'Legacy URL kept so old forms still work; always hard-deletes.'",
-      "status": "Reproduced"
-    }
-  ],
+  "bugs": [],
   "checks": [
     {
       "area": "Phase1-Login",
@@ -5599,8 +5554,8 @@
     {
       "area": "Phase5-Forms",
       "item": "add_payment handles negative amount",
-      "status": "FAILED",
-      "detail": "saved=True stored=500.0 expected_saved=False; flash: Payment received successfully. \u2014 by Admin"
+      "status": "PASSED",
+      "detail": "saved=False stored=None expected_saved=False; flash: Amount cannot be negative. Enter a positive amount and choose the Refund payment type to pay money back to the client. \u2014 by Admin"
     },
     {
       "area": "Phase5-Forms",
@@ -6078,33 +6033,33 @@
     },
     {
       "area": "Phase11-Reversal",
-      "item": "booking void accepted",
+      "item": "no misleading void/unvoid transaction routes are registered",
       "status": "PASSED",
-      "detail": "Booking deleted \u2014 by Admin"
+      "detail": "still present: []"
     },
     {
       "area": "Phase11-Reversal",
-      "item": "voiding a booking soft-voids it rather than destroying the row",
-      "status": "FAILED",
-      "detail": "the row was hard-deleted from the database"
+      "item": "booking delete accepted",
+      "status": "PASSED",
+      "detail": "Booking permanently deleted \u2014 by Admin"
     },
     {
       "area": "Phase11-Reversal",
-      "item": "voiding/deleting a booking leaves no orphan booking items",
+      "item": "deleting a booking removes the row permanently",
+      "status": "PASSED",
+      "detail": "the row is still present after delete"
+    },
+    {
+      "area": "Phase11-Reversal",
+      "item": "deleting a booking leaves no orphan booking items",
       "status": "PASSED",
       "detail": "0 booking_item rows still reference booking 10 (was 1)"
     },
     {
       "area": "Phase11-Reversal",
-      "item": "voiding a booking reverses exactly its outstanding contribution",
+      "item": "deleting a booking reverses exactly its outstanding contribution",
       "status": "PASSED",
       "detail": "expected -13000.0, got -13000.0"
-    },
-    {
-      "area": "Phase11-Reversal",
-      "item": "un-voiding a booking restores the record and the balance",
-      "status": "FAILED",
-      "detail": "row_restored=False; balance expected 75000.0, got 62000.0"
     },
     {
       "area": "Phase11-Reversal",
@@ -6114,21 +6069,15 @@
     },
     {
       "area": "Phase11-Reversal",
-      "item": "payment void accepted",
+      "item": "payment delete accepted",
       "status": "PASSED",
-      "detail": "Payment deleted \u2014 by Admin"
+      "detail": "Payment permanently deleted \u2014 by Admin"
     },
     {
       "area": "Phase11-Reversal",
-      "item": "voiding a payment adds the amount back to outstanding",
+      "item": "deleting a payment adds the amount back to outstanding",
       "status": "PASSED",
       "detail": "expected +2000.0, got +2000.0"
-    },
-    {
-      "area": "Phase11-Reversal",
-      "item": "payment un-void restores outstanding",
-      "status": "PASSED",
-      "detail": "expected 62000.0"
     },
     {
       "area": "Phase15-EdgeCases",
