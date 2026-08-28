@@ -1,0 +1,85 @@
+# =============================================================================
+# AMS module manifest — read by app/services/module_system/contract.py
+#
+# This file is DATA: discovering a module never executes it. The application
+# validates everything declared here (id, version, dependencies, routes,
+# navigation, permissions, tables, migrations, health checks, tests) and only
+# then imports the package. Full reference: docs/MODULE_CONTRACT.md
+# =============================================================================
+
+[module]
+id = "plant_registry"
+name = "Plant & Equipment Register"
+version = "1.0.0"
+description = "Register of site plant and equipment (mixers, weighbridge, generators) with status and location. Demonstration module for the module contract."
+enabled = true
+# Contract version this module was written against.
+schema_api = 1
+# A module is only mounted when every dependency validated successfully.
+depends_on = ["accounts"]
+
+[routes]
+url_prefix = "/plant_registry"
+order = 400
+# These must exist after registration; a typo here is a startup report, not a
+# silent 404 later.
+expected_endpoints = [
+    "plant_registry.index",
+    "plant_registry.detail",
+    "plant_registry.save",
+    "plant_registry.toggle_status",
+    "plant_registry.api_summary",
+]
+
+# Sidebar entries come from here, not from an edit to templates/layout.html.
+# Every item is validated: duplicate ids, unresolvable endpoints, unknown
+# parents and unprotected administrative links are all reported.
+[navigation]
+items = [
+    { id = "plant_registry.index", label = "Plant Register", endpoint = "plant_registry.index", icon = "bi-buildings", parent = "masters", order = 60, permission = "can_view_plant_registry" },
+    { id = "plant_registry.summary", label = "Plant Summary", endpoint = "plant_registry.api_summary", icon = "bi-clipboard-data", parent = "reports", order = 70, permission = "can_view_plant_registry" },
+]
+
+[permissions]
+# Every route in this blueprint requires it (BLUEPRINT_PERMISSION_PREFIXES).
+required = "can_view_plant_registry"
+allowed_roles = ["admin", "manager", "user"]
+
+[permissions.defaults]
+can_view_plant_registry = true
+
+[database]
+# Tables this module owns. The audit refuses to let a module claim a core table.
+tables = ["plant_asset", "plant_asset_movement"]
+models_import = "blueprints.plant_registry.models"
+
+# kind is a declaration of intent ("schema" | "data" | "index"); the pipeline
+# refuses to run a revision whose file sets a different KIND, so the manifest can
+# never understate what a change does to business records.
+[[database.migrations]]
+version = "2026_001"
+slug = "create_plant_registry_tables"
+file = "migrations/2026_001_create_plant_registry_tables.py"
+kind = "schema"
+destructive = false
+requires_data_validation = false
+
+[[database.migrations]]
+version = "2026_002"
+slug = "normalise_asset_location_codes"
+file = "migrations/2026_002_normalise_asset_locations.py"
+kind = "data"
+destructive = false
+# a data revision is only runnable because 2026_002 defines verify()
+requires_data_validation = true
+
+[health]
+checks = ["blueprints.plant_registry.health:check_plant_registry"]
+
+[tests]
+paths = ["tests/test_plant_registry_module.py"]
+labels = ["plant_registry", "modules"]
+
+[features]
+plant_registry_pdf_export = false
+plant_registry_allow_bulk_import = false

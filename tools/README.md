@@ -10,6 +10,9 @@ Nothing in this folder is loaded at runtime.
 
 | Command | Purpose |
 |---------|---------|
+| `python tools/dbupdate.py` | **Module + schema + data updates** — read-only check (default) |
+| `python tools/dbupdate.py apply` | Backup, apply approved revisions, verify, report |
+| `python tools/dbupdate.py status --json` | Environment, policy, schema and module summary |
 | `python tools/consistency_report.py` | Full data integrity check (read-only) |
 | `python tools/consistency_report.py --json` | Machine-readable JSON output |
 | `python tools/db_write_guard.py --report` | Show write guard log |
@@ -21,6 +24,7 @@ Nothing in this folder is loaded at runtime.
 
 ```
 tools/
+  dbupdate.py                 ← module/schema/data update control (check by default)
   consistency_report.py       ← ONE-COMMAND system health check (read-only)
   db_write_guard.py           ← Write-path safety observer (additive, no blocking by default)
 
@@ -167,3 +171,42 @@ AMS_WRITE_GUARD=observe    (default) log warnings, never block
 AMS_WRITE_GUARD=enforce    raise RuntimeError on unsafe direct writes
 AMS_WRITE_GUARD=off        disable entirely
 ```
+
+---
+
+## `dbupdate.py` — modules, schema and data
+
+The single command surface for the update pipeline (`app/services/dbupdate/`).
+It is the only CLI allowed to change the schema, and it is the same code path the
+application runs at startup — so `check` tells the truth about what a boot will
+do.
+
+| Class | Commands | Writes? |
+|---|---|---|
+| CHECK ONLY | `check` (default), `discover`, `audit-schema`, `validate-migrations`, `status`, `history`, `integrity` | never |
+| PREVIEW | `plan`, `plan --rehearse` (applies to a copy of the database) | never to the real DB |
+| APPLY | `apply`, `full-update --apply`, `backup` | yes, policy-gated |
+| PRODUCTION | same, with `AMS_ENV=production` | also needs `--yes`; backup mandatory |
+| TEST | `tests`, `tests --all` | no schema writes |
+
+```bash
+# before adding or changing a module
+python tools/dbupdate.py discover            # statuses + the reason for any failure
+python tools/dbupdate.py check               # what the next boot would do; exit 1 if pending
+
+# during a change window
+python tools/dbupdate.py plan --rehearse
+python tools/dbupdate.py apply
+python tools/dbupdate.py integrity
+python tools/dbupdate.py docs                 # regenerate docs/MODULE_REGISTRY.md
+
+# in CI (read-only, machine-readable)
+python tools/dbupdate.py status --json | jq .audit.status
+python tools/dbupdate.py check --json
+```
+
+Exit codes: `0` ok · `1` pending work or warnings · `2` failure needing attention
+· `3` the command itself could not run. Destructive migrations are refused unless
+`AMS_ALLOW_DESTRUCTIVE_MIGRATIONS=1` is set, and in production additionally
+require `apply --yes`. Full behaviour: `docs/DATABASE_UPDATE_PIPELINE.md`;
+module authoring: `docs/MODULE_CONTRACT.md`.

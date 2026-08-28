@@ -88,6 +88,35 @@ def register_deploy_routes(app):
             commit = head.stdout.strip() if head.returncode == 0 else None
         except Exception:
             commit = None
+        # Module + database-update state.  Deliberately *informational*: the
+        # HTTP code stays governed by the database probe so an unrelated module
+        # problem can never flip the load balancer / deploy health poll, while
+        # `degraded` still tells an operator that attention is needed.
+        modules: dict = {}
+        try:
+            registry = (app.extensions or {}).get("ams_modules")
+            if registry is not None:
+                broken = sorted(
+                    spec.module_id
+                    for spec in registry.specs.values()
+                    if spec.status in {"FAILED_VALIDATION", "MISSING_DEPENDENCY", "ROUTE_CONFLICT"}
+                )
+                modules = {
+                    "discovered": len(registry.specs),
+                    "registered": len(registry.registrations),
+                    "failed": broken,
+                }
+                if broken:
+                    status = "degraded"
+        except Exception:  # pragma: no cover - monitoring detail only
+            modules = {}
+        update = {
+            "final_status": app.config.get("AMS_UPDATE_FINAL_STATUS") or "",
+            "pipeline_error": app.config.get("AMS_UPDATE_PIPELINE_ERROR") or "",
+            "bootstrap_error": bool(app.config.get("AMS_BOOTSTRAP_ERROR")),
+        }
+        if update["pipeline_error"] or update["bootstrap_error"]:
+            status = "degraded"
         return (
             jsonify(
                 {
@@ -96,6 +125,8 @@ def register_deploy_routes(app):
                     "app": cfg["app"]["name"],
                     "branch": gh["branch"],
                     "commit": commit,
+                    "modules": modules,
+                    "update": update,
                 }
             ),
             200 if db_ok else 503,

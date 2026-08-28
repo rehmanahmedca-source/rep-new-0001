@@ -142,6 +142,45 @@ RUN_MIGRATIONS = True         # ensure DB schema matches models (app import)
 RUN_HEALTH_CHECK = True       # poll /health until healthy after reload
 CREATE_DB_BACKUP = True       # copy the live SQLite DB aside before deploy
 
+# ============================================================
+# MODULE / DATABASE UPDATE POLICY  (see docs/DATABASE_UPDATE_PIPELINE.md)
+# ============================================================
+# These switches decide what the application may do to its own database.
+# They are read by app/services/dbupdate/policy.py; every value can be
+# overridden per installation with an AMS_* environment variable, exactly
+# like the deployment settings above.
+
+# development | test | production.  Production is also *inferred* from the
+# PythonAnywhere markers, so a live server can never "forget" to declare it.
+# Leave empty to let app/services/dbupdate/policy.py detect it.
+APP_ENVIRONMENT = os.environ.get("AMS_ENV", "")
+
+# What to do when code and database disagree:
+#   auto    -> discover, validate, audit, back up, apply safe migrations
+#   guarded -> as auto, but additive-only revisions with a verified backup
+#   audit   -> detect and report only, never write
+#   manual  -> report only; an operator runs tools/dbupdate.py apply
+# Leave empty to derive it from the environment (guarded in production).
+UPDATE_POLICY = os.environ.get("AMS_UPDATE_POLICY", "")
+
+# A destructive revision (DROP / DELETE / table rebuild) is refused unless this
+# is explicitly enabled — and in production a verified backup is still required.
+ALLOW_DESTRUCTIVE_MIGRATIONS = False
+# Back up before any schema/data change.  Ignored if set to 0 in production.
+REQUIRE_BACKUP_BEFORE_UPDATE = True
+# Run the affected modules' declared pytest files as part of a FULL UPDATE.
+RUN_MODULE_TESTS_ON_UPDATE = False
+# Verify financial/inventory/ledger consistency after every update.
+RUN_INTEGRITY_AFTER_UPDATE = True
+# Keep the generated docs/MODULE_REGISTRY.md in sync after an update.
+REGENERATE_MODULE_DOCS = True
+# How many timestamped report sets to keep under instance/logs/update-history/
+UPDATE_REPORT_HISTORY = 12
+# Gate the GitHub auto-deploy: run tools/dbupdate.py check before touching the
+# live tree.  STRICT blocks the deploy when the check reports an unsafe state.
+RUN_UPDATE_GATE = True
+STRICT_UPDATE_GATE = False
+
 # Number of previous commits to keep for rollback.
 ROLLBACK_HISTORY = 5
 # Health-check polling after reload (seconds).
@@ -221,10 +260,22 @@ def deployment_config() -> dict:
             "run_migrations": RUN_MIGRATIONS,
             "run_health_check": RUN_HEALTH_CHECK,
             "create_db_backup": CREATE_DB_BACKUP,
+            "run_update_gate": RUN_UPDATE_GATE,
+            "strict_update_gate": STRICT_UPDATE_GATE,
             "rollback_history": ROLLBACK_HISTORY,
             "health_attempts": HEALTH_CHECK_ATTEMPTS,
             "health_interval": HEALTH_CHECK_INTERVAL,
             "pip_timeout": PIP_TIMEOUT,
+        },
+        "update": {
+            "environment": APP_ENVIRONMENT,
+            "policy": UPDATE_POLICY,
+            "allow_destructive": ALLOW_DESTRUCTIVE_MIGRATIONS,
+            "require_backup": REQUIRE_BACKUP_BEFORE_UPDATE,
+            "run_module_tests": RUN_MODULE_TESTS_ON_UPDATE,
+            "run_integrity": RUN_INTEGRITY_AFTER_UPDATE,
+            "regenerate_docs": REGENERATE_MODULE_DOCS,
+            "report_history": UPDATE_REPORT_HISTORY,
         },
     }
 
@@ -298,6 +349,23 @@ def validate_config(require_secrets: bool = False, check_paths: bool = False) ->
     if not pa["app_base_url"].startswith("https://"):
         problems.append("Application base URL must be https.")
 
+    upd = cfg["update"]
+    if upd["environment"] and upd["environment"] not in ("development", "test", "production"):
+        problems.append(
+            f"AMS_ENV must be development, test or production (got {upd['environment']!r})."
+        )
+    if upd["policy"] and upd["policy"] not in ("auto", "guarded", "audit", "manual"):
+        problems.append(
+            f"AMS_UPDATE_POLICY must be auto, guarded, audit or manual (got {upd['policy']!r})."
+        )
+    if upd["require_backup"] and upd["allow_destructive"] and upd["environment"] == "production":
+        problems.append(
+            "Production allows destructive migrations: keep AMS_ALLOW_DESTRUCTIVE_MIGRATIONS "
+            "off, or run the migration manually with a verified backup instead."
+        )
+    if int(upd["report_history"] or 0) < 1:
+        problems.append("UPDATE_REPORT_HISTORY must keep at least one report set.")
+
     if require_secrets:
         if not os.environ.get(ENV_WEBHOOK_TOKEN):
             problems.append(
@@ -347,6 +415,7 @@ def render_control_panel() -> str:
     """Human-readable summary of the deployment target (the 'control panel')."""
     cfg = get_config()
     gh, pa, dep = cfg["github"], cfg["pythonanywhere"], cfg["deploy"]
+    upd = cfg["update"]
     lines = [
         "=" * 48,
         "              DEPLOYMENT CONTROL",
@@ -370,8 +439,18 @@ def render_control_panel() -> str:
         f"    Auto reload      : {dep['auto_reload']}",
         f"    Install deps     : {dep['install_requirements']}",
         f"    Run migrations   : {dep['run_migrations']}",
+        f"    Update gate      : {dep.get('run_update_gate')} (strict: {dep.get('strict_update_gate')})",
         f"    Health check     : {dep['run_health_check']}",
         f"    DB backup        : {dep['create_db_backup']}",
+        "",
+        "MODULE / DATABASE UPDATE",
+        f"    Environment      : {upd['environment'] or '(auto-detect)'}",
+        f"    Policy           : {upd['policy'] or '(derived from environment)'}",
+        f"    Destructive      : {upd['allow_destructive']}",
+        f"    Backup required  : {upd['require_backup']}",
+        f"    Module tests     : {upd['run_module_tests']}",
+        f"    Integrity checks : {upd['run_integrity']}",
+        f"    Report history   : {upd['report_history']} set(s)",
         "",
         "SECRETS (from environment, never stored here)",
         f"    Webhook token    : ${cfg['secrets']['webhook_token_env']}",

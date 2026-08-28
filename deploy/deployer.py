@@ -254,6 +254,101 @@ def validate_app_imports(cfg, base: Path):
     logger.info("Application import validation passed.")
 
 
+def _first_json(text: str):
+    """Parse the first JSON object embedded in command output (logs may prefix it)."""
+    start = text.find("{")
+    if start < 0:
+        return None
+    try:
+        return json.JSONDecoder().raw_decode(text[start:])[0]
+    except Exception:
+        return None
+
+
+def update_gate(cfg, base: Path) -> tuple[bool, str]:
+    """Read-only verification of module + schema state after a deploy.
+
+    Two sources, both cheap and both non-destructive:
+
+    1. the health report the application wrote while it booted (that boot is
+       where the update pipeline runs, including its own verification);
+    2. ``tools/dbupdate.py status`` — an independent audit of expected vs
+       actual schema plus the module registry.
+
+    A failing gate is *recorded* by default and only blocks the deployment when
+    ``deploy.strict_update_gate`` is on, because a schema drift must not leave
+    the site down; it must, however, never be invisible.
+    """
+    dep = cfg["deploy"]
+    if not dep.get("run_update_gate", True):
+        return True, "skipped (deploy.run_update_gate=false)"
+
+    notes: list[str] = []
+    ok = True
+    report_path = base / "instance" / "logs" / "update-health-report.json"
+    try:
+        report = json.loads(report_path.read_text()) if report_path.exists() else {}
+    except Exception as exc:
+        report = {}
+        notes.append(f"boot report unreadable: {type(exc).__name__}")
+    final = str(report.get("final_status") or "").upper()
+    if report:
+        notes.append(f"boot update run {report.get('run_key')} -> {final or 'UNKNOWN'}")
+        if final and final not in {"READY", "OK", "NO_CHANGES", "CHECKED"}:
+            ok = False
+        if report.get("blockers"):
+            ok = False
+            first = report["blockers"][0]
+            notes.append(
+                f"{len(report['blockers'])} blocker(s): {first.get('step')} — "
+                f"{str(first.get('what'))[:120]}"
+            )
+        checks = report.get("checks") or {}
+        for name in ("schema_validation", "data_integrity", "regression"):
+            state = str((checks.get(name) or {}).get("status") or "").upper()
+            if state and state not in {"PASS", "OK", "SKIPPED"}:
+                ok = False
+                notes.append(f"{name}={state}")
+    else:
+        notes.append(f"no boot report at {report_path} (pipeline may have been skipped)")
+
+    code, out = run_command(
+        [_pip_python(cfg), "tools/dbupdate.py", "status", "--json"],
+        base,
+        timeout=int(dep.get("update_gate_timeout", 600)),
+    )
+    payload = _first_json(out or "")
+    if code != 0 or not payload:
+        ok = False
+        notes.append(f"status command failed (exit {code}): {str(out)[-300:].strip()}")
+    else:
+        status = str(payload.get("status") or "").upper()
+        audit = payload.get("audit") or {}
+        counts = audit.get("counts") or {}
+        modules = payload.get("modules") or {}
+        notes.append(
+            f"schema {status} (additive {counts.get('additive')}, manual {counts.get('manual')}, "
+            f"destructive {counts.get('destructive')}), "
+            f"modules {len(payload.get('installs') or [])} installed"
+        )
+        if modules.get("FAILED_VALIDATION") or modules.get("MISSING_DEPENDENCY") or modules.get("ROUTE_CONFLICT"):
+            ok = False
+            notes.append(
+                "module problems: "
+                + ", ".join(sorted(
+                    m
+                    for key in ("FAILED_VALIDATION", "MISSING_DEPENDENCY", "ROUTE_CONFLICT")
+                    for m in (modules.get(key) or [])
+                ))
+            )
+        if status in {"MIGRATION_REQUIRED", "SCHEMA_DRIFT"}:
+            ok = False
+            notes.append(
+                "schema still differs from the models — run 'tools/dbupdate.py plan', then apply"
+            )
+    return ok, "; ".join(notes) or "verified"
+
+
 def touch_wsgi(cfg):
     """Reload PythonAnywhere by touching the configured WSGI file."""
     wsgi = Path(cfg["pythonanywhere"]["wsgi_path"])
@@ -379,6 +474,15 @@ def deploy(dry_run: bool = False) -> dict:
         if dep["run_migrations"]:
             validate_app_imports(cfg, base)
         stage("Application Validated", True)
+
+        # 7b. update gate — module registry, schema drift and the verification
+        # the boot-time pipeline already performed.  Non-blocking by default so
+        # a deployment is never held hostage by a drift warning, but the detail
+        # is always recorded in the deploy result.
+        gate_ok, gate_detail = update_gate(cfg, base)
+        if not gate_ok and dep.get("strict_update_gate"):
+            raise DeployError("Update gate failed (nothing was left half-applied):\n" + gate_detail)
+        stage("Update Gate", gate_ok, gate_detail[:400])
 
         # 8. reload
         if dep["auto_reload"]:

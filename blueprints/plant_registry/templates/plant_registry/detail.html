@@ -1,0 +1,68 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h2 class="fw-bold text-warning mb-0">{{ asset.name }}</h2>
+        <p class="text-white-50 small mb-0">{{ asset.asset_code }} &middot; revision {{ asset.revision }}</p>
+    </div>
+    <a href="{{ url_for('plant_registry.index') }}" class="btn btn-outline-light btn-sm fw-bold">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </a>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-5">
+        <div class="card border-secondary bg-dark shadow-sm">
+            <div class="card-header bg-transparent small text-white-50">Asset</div>
+            <div class="card-body small">
+                <dl class="row mb-0">
+                    <dt class="col-5 text-white-50">Status</dt><dd class="col-7">{{ status_labels.get(asset.status, asset.status) }}</dd>
+                    <dt class="col-5 text-white-50">Category</dt><dd class="col-7">{{ asset.category or '—' }}</dd>
+                    <dt class="col-5 text-white-50">Location</dt><dd class="col-7">{{ asset.location or '—' }}</dd>
+                    <dt class="col-5 text-white-50">Location code</dt><dd class="col-7">{{ asset.location_code or '—' }}</dd>
+                    <dt class="col-5 text-white-50">Value</dt><dd class="col-7">{{ '%.2f' % (asset.purchase_value_minor / 100) }}</dd>
+                    <dt class="col-5 text-white-50">Commissioned</dt><dd class="col-7">{{ asset.commissioned_on or '—' }}</dd>
+                    <dt class="col-5 text-white-50">Notes</dt><dd class="col-7">{{ asset.notes or '—' }}</dd>
+                    <dt class="col-5 text-white-50">Created by</dt><dd class="col-7">{{ asset.created_by or '—' }}</dd>
+                </dl>
+            </div>
+        </div>
+        <div class="card border-secondary bg-dark shadow-sm mt-3">
+            <div class="card-header bg-transparent small text-white-50">Change status</div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('plant_registry.toggle_status', asset_id=asset.id) }}" class="d-flex gap-2">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                    <select class="form-select form-select-sm" name="status">
+                        {% for value in statuses %}
+                        <option value="{{ value }}" {{ 'selected' if value == asset.status }}>{{ status_labels[value] }}</option>
+                        {% endfor %}
+                    </select>
+                    <button class="btn btn-sm btn-outline-warning" type="submit">Update</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-7">
+        <div class="card border-secondary bg-dark shadow-sm">
+            <div class="card-header bg-transparent small text-white-50">Movement log</div>
+            <div class="card-body p-0">
+                <table class="table table-dark table-sm mb-0 small">
+                    <thead><tr><th class="ps-3">Date</th><th>From</th><th>To</th><th>Reason</th></tr></thead>
+                    <tbody>
+                    {% for entry in movements %}
+                        <tr>
+                            <td class="ps-3">{{ entry.movement_date }}</td>
+                            <td class="text-white-50">{{ entry.from_location or '—' }}</td>
+                            <td class="text-white-50">{{ entry.to_location or '—' }}</td>
+                            <td>{{ entry.reason or '—' }}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="4" class="text-center text-white-50 py-3">No movements recorded.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

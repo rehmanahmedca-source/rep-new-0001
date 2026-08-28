@@ -17,6 +17,15 @@ tools/migrate/
   post_import_enrichment.sql      derived-column backfills + hardening after import
 ```
 
+## Where the export comes from
+
+Steps 01–03 default to the newest staged workbook — an ``ALLEXPORT-DD-MM-YYYY_HH-MMPM.xlsx``
+found in ``legacy data/`` (this repository's staging folder, e.g.
+``legacy data/ALLEXPORT-28-08-2026_12-35PM.xlsx``) or the historical
+``Realdata/`` — chosen by the date in its file name. Pin it explicitly with
+``--source`` or ``AMS_LEGACY_EXPORT=...`` when a specific snapshot must be used;
+a cleaned export (``*-CLEAN-*``) is never treated as a source.
+
 ## Why this exists
 
 The app's own full-raw importer restores the export **verbatim** — it does not
