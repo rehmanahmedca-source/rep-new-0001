@@ -17,6 +17,106 @@ from models import db
 from utils.module_loader import load_modules
 
 
+_UPDATE_FALLBACK = {
+    "environment": "",
+    "policy": "",
+    "allow_destructive": False,
+    "require_backup": True,
+    "run_integrity": True,
+    "run_module_tests": False,
+    "regenerate_docs": True,
+    "report_history": 12,
+}
+
+
+#: Sidebar heading for each navigation parent a module may declare.
+NAV_GROUP_LABELS = {
+    "": "Modules",
+    "core": "Modules",
+    "masters": "Directory",
+    "inventory": "Inventory",
+    "transactions": "Transactions",
+    "finance": "Finance",
+    "ops": "Operations",
+    "reports": "Reports",
+    "system": "System",
+}
+
+
+def _register_module_navigation(app: Flask) -> None:
+    """Expose validated module navigation to the shared layout.
+
+    The core sidebar stays hand-tuned in ``templates/layout.html``; what a new
+    module gets for free is its own entry, ordered and grouped by its manifest
+    and filtered through the application's *existing* permission rules
+    (``_user_can``).  A module that declares no permission is still gated on
+    authentication, and an item whose endpoint does not resolve is dropped here
+    and reported by the update pipeline instead of exploding the layout.
+    """
+
+    @app.context_processor
+    def inject_module_navigation():
+        empty = {"module_nav": [], "module_nav_groups": {}}
+        registry = app.extensions.get("ams_modules")
+        if registry is None:
+            return empty
+        try:
+            from flask import url_for
+            from flask_login import current_user
+
+            from app.services.permissions import _user_can
+        except Exception:  # pragma: no cover - defensive
+            return empty
+
+        items: list[dict] = []
+        for item in registry.navigation(app):
+            if not item.get("resolvable"):
+                continue
+            permission = item.get("permission") or ""
+            if permission or item.get("visible_to") == "permissioned":
+                if not getattr(current_user, "is_authenticated", False):
+                    continue
+                if permission and not _user_can(permission):
+                    continue
+            try:
+                item["href"] = url_for(item["endpoint"])
+            except Exception:
+                continue
+            items.append(item)
+
+        groups: dict[str, list[dict]] = {}
+        for item in items:
+            label = NAV_GROUP_LABELS.get(str(item.get("parent") or ""), str(item.get("parent") or "Modules").title())
+            groups.setdefault(label, []).append(item)
+        for entries in groups.values():
+            entries.sort(key=lambda entry: int(entry.get("order") or 0))
+        return {"module_nav": items, "module_nav_groups": groups}
+
+
+def _resolve_update_defaults() -> dict:
+    """Read the update policy block from config.py without ever failing boot.
+
+    ``config.py`` is the single source of truth for deployment *and* update
+    behaviour; a broken/unimportable config must not stop the ERP, so the
+    documented fallbacks are used and the import error is logged.
+    """
+    try:
+        import config as project_config
+
+        update = dict(project_config.get_config().get("update") or {})
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "config.py update section unavailable; using built-in update defaults",
+            exc_info=True,
+        )
+        return dict(_UPDATE_FALLBACK)
+    merged = dict(_UPDATE_FALLBACK)
+    for key, value in update.items():
+        if value is not None:
+            merged[key] = value
+    return merged
+
+
 def create_app(test_config: dict | None = None) -> Flask:
     root = Path(__file__).resolve().parent.parent
     app = Flask(
@@ -53,6 +153,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     db_parent = Path(db_path).expanduser().parent
     db_parent.mkdir(parents=True, exist_ok=True)
     max_upload_mb = int(os.environ.get("MAX_UPLOAD_MB", "256") or "256")
+    _update_defaults = _resolve_update_defaults()
     journal_mode = _resolve_sqlite_journal_mode(db_path)
 
     # Empty instance / deleted database → create a fresh empty SQLite file.
@@ -133,6 +234,26 @@ def create_app(test_config: dict | None = None) -> Flask:
         BACKUP_RETENTION=int(os.environ.get("BACKUP_RETENTION", "3") or "3"),
         BACKUP_LOCK_STALE_SECONDS=int(os.environ.get("BACKUP_LOCK_STALE_SECONDS", "7200") or "7200"),
         TEMP_RETENTION_SECONDS=int(os.environ.get("TEMP_RETENTION_SECONDS", "86400") or "86400"),
+        # ---- module + database update subsystem ------------------------------
+        # Policy values come from config.py (which itself prefers AMS_* env
+        # overrides), so there is one place to change them and no host can
+        # accidentally inherit development behaviour in production.
+        APP_VERSION=(os.environ.get("AMS_APP_VERSION") or "1.0.0").strip() or "1.0.0",
+        AMS_ENV=(os.environ.get("AMS_ENV") or _update_defaults["environment"] or "").strip(),
+        AMS_UPDATE_POLICY=(
+            os.environ.get("AMS_UPDATE_POLICY") or _update_defaults["policy"] or ""
+        ).strip(),
+        AMS_ALLOW_DESTRUCTIVE_MIGRATIONS=_update_defaults["allow_destructive"],
+        AMS_REQUIRE_BACKUP_BEFORE_UPDATE=_update_defaults["require_backup"],
+        AMS_RUN_REGRESSION_ON_UPDATE=_update_defaults["run_integrity"],
+        MIGRATIONS_DIR=str(root / "app" / "migrations"),
+        UPDATE_REPORT_DIR=os.environ.get(
+            "UPDATE_REPORT_DIR", str(instance_dir / "logs")
+        ),
+        UPDATE_REPORT_HISTORY=int(
+            os.environ.get("UPDATE_REPORT_HISTORY", str(_update_defaults["report_history"])) or "12"
+        ),
+        AMS_MODULE_ROOT=os.environ.get("AMS_MODULE_ROOT") or str(root / "blueprints"),
         MIN_FREE_DISK_BYTES=int(os.environ.get("MIN_FREE_DISK_BYTES", str(100 * 1024 * 1024)) or "0"),
         # Do not create backup database files from the web process. Backups
         # remain available only through an explicit maintenance operation.
@@ -209,7 +330,15 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     _alias_unprefixed_endpoints(app)
 
-    load_modules(app, blueprint_dir=str(root / "blueprints"))
+    # ``AMS_MODULE_ROOT`` (config.py / environment) lets a deployment stage the
+    # module pack somewhere other than blueprints/ — and lets the pipeline tests
+    # point discovery at a fixture directory.  Empty falls back to the default.
+    load_modules(
+        app,
+        blueprint_dir=str(app.config.get("AMS_MODULE_ROOT") or (root / "blueprints")),
+    )
+
+    _register_module_navigation(app)
 
     from app.hooks import register_hooks
 
@@ -300,7 +429,35 @@ def create_app(test_config: dict | None = None) -> Flask:
                             "ORM schema bootstrap.",
                             exc_info=True,
                         )
-                _bootstrap_database()
+                app.config["AMS_BOOTSTRAP_HANDLED_BY_DBUPDATE"] = False
+                if (os.environ.get("AMS_SKIP_UPDATE_PIPELINE") or "").strip().lower() not in ("1", "true", "yes"):
+                    # The database update subsystem owns the bootstrap: it runs the
+                    # historical additive ensure-chain *and* any versioned module or
+                    # core revision, verifies the outcome, checks integrity and
+                    # writes the update report.  Policy comes from config.py, so a
+                    # production host can never inherit development behaviour.
+                    try:
+                        from app.services.dbupdate import startup_bootstrap
+
+                        update_report = startup_bootstrap(app) or {}
+                        # ``handled`` is the pipeline's own statement that it
+                        # brought the schema up to date; anything else (a
+                        # check-only pass, an automated test run, a skipped
+                        # subsystem) leaves the historical bootstrap in charge.
+                        app.config["AMS_BOOTSTRAP_HANDLED_BY_DBUPDATE"] = bool(
+                            update_report.get("handled")
+                        )
+                    except Exception:
+                        logging.getLogger(__name__).critical(
+                            "database update subsystem failed; falling back to the legacy bootstrap",
+                            exc_info=True,
+                        )
+                if not app.config.get("AMS_BOOTSTRAP_HANDLED_BY_DBUPDATE"):
+                    # Either the operator skipped the pipeline
+                    # (AMS_SKIP_UPDATE_PIPELINE), the policy is check-only, or the
+                    # pipeline failed: keep the ERP on the bootstrap path it has
+                    # always used.
+                    _bootstrap_database()
                 try:
                     _db_health_check_after_bootstrap()
                 except Exception:

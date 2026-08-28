@@ -11,6 +11,8 @@ instance/*.db-shm
 instance/health_snapshot.json
 # Pre-deploy database backups made by the deployer
 instance/backups/
+# maintenance engine runtime storage (verified backup sets + staging temp)
+instance/storage/
 v44/*.db
 v44/*.db-wal
 v44/*.db-shm
@@ -31,3 +33,11 @@ config.txt
 *.pyc
 # QA scratch harness (local test runs, not part of the app)
 .qa/
+
+# Update-pipeline reports and rehearsal artefacts (instance-local, regenerable)
+instance/logs/update-health-report.json
+instance/logs/schema-audit.json
+instance/logs/module-registry-report.json
+instance/logs/migration-report.json
+instance/logs/UPDATE_HEALTH_REPORT.md
+instance/logs/update-history/

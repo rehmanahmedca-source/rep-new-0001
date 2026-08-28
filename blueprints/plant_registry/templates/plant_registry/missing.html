@@ -1,0 +1,8 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle me-2"></i>No plant asset with id <strong>{{ asset_id }}</strong> exists.
+    It may have been removed, or the link is stale.
+    <a class="btn btn-sm btn-outline-dark ms-2" href="{{ url_for('plant_registry.index') }}">Back to the register</a>
+</div>
+{% endblock %}

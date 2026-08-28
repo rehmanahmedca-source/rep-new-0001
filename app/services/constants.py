@@ -146,6 +146,11 @@ USER_PERMISSION_DEFAULTS = {
     'can_access_settings': False,
     'can_manage_accounts': False,
     'can_view_cash_flow': False,
+    # Module-declared permission (blueprints/plant_registry/module.toml).  It has
+    # no column on `user` yet, so _user_can() falls back to this default; a
+    # module that needs per-user grants must add the column through a core
+    # revision first — see docs/MODULE_CONTRACT.md § Permissions.
+    'can_view_plant_registry': True,
 }
 
 PERMISSION_LEGACY_FALLBACKS = {
@@ -164,6 +169,7 @@ PERMISSION_LEGACY_FALLBACKS = {
     'can_manage_suppliers': 'can_manage_directory',
     'can_manage_materials': 'can_manage_directory',
     'can_manage_delivery_persons': 'can_manage_directory',
+    'can_view_plant_registry': 'can_view_dashboard',
 }
 
 ENDPOINT_PERMISSION_MAP = {
@@ -187,6 +193,10 @@ ENDPOINT_PERMISSION_MAP = {
     'add_material_return': 'can_manage_sales',
     'delete_transaction': 'can_manage_sales',
     'delete_bill': 'can_manage_sales',
+    # plant_registry module (short endpoint names; the before_request hook
+    # checks both 'plant_registry.save' and 'save').
+    'plant_registry.save': 'can_view_plant_registry',
+    'plant_registry.toggle_status': 'can_view_plant_registry',
     'view_bill': 'can_view_history',
     'download_invoice': 'can_view_history',
     'view_bill_detail': 'can_view_history',
@@ -370,6 +380,8 @@ ENDPOINT_PERMISSION_MAP = {
 # views regardless of these flags.
 BLUEPRINT_PERMISSION_PREFIXES = {
     'accounts': ('can_manage_accounts', 'can_manage_payments'),
+    # Registered from the module manifest (plant_registry.permissions.required).
+    'plant_registry': 'can_view_plant_registry',
 }
 
 AUTO_BILL_NS_DEFAULT = 'GEN'

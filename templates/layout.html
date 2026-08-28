@@ -590,6 +590,18 @@
                 {% endif %}
                 {% endif %}
 
+                {# Module-declared navigation — generated from validated module.toml
+                   metadata by app/services/module_system. Adding a module with a
+                   [navigation] block needs no edit to this file. #}
+                {% for group_label, module_items in module_nav_groups.items() %}
+                <div class="text-white-50 small fw-bold px-4 mt-4 mb-2 text-uppercase" style="font-size: 0.7rem;">{{ group_label }}</div>
+                {% for nav_item in module_items %}
+                <a href="{{ nav_item.href }}" class="nav-link {{ 'active' if request.path.startswith(nav_item.active_prefix or '/') }}" onclick="closeSidebar()">
+                    <i class="bi {{ nav_item.icon }}"></i> {{ nav_item.label }}
+                </a>
+                {% endfor %}
+                {% endfor %}
+
                 <div class="text-white-50 small fw-bold px-4 mt-4 mb-2 text-uppercase" style="font-size: 0.7rem;">System</div>
                 {% if current_user.role != 'root' and (current_user.role == 'admin' or current_user.can_access_settings) %}
 <a href="/settings" class="nav-link {{ 'active' if request.path == '/settings' }}" onclick="closeSidebar()">

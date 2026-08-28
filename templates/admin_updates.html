@@ -1,0 +1,162 @@
+{% extends "layout.html" %}
+{% block content %}
+{# ============================================================================
+   Update pipeline report — the last run's health report, the ledger and the
+   policy this instance is running under.  Same numbers as
+   `python tools/dbupdate.py status`.
+   =========================================================================== #}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h2 class="fw-bold text-warning mb-0"><i class="bi bi-arrow-repeat me-2"></i>Database &amp; Module Updates</h2>
+        <p class="text-white-50 small mb-0">
+            Environment <code>{{ policy.environment or '—' }}</code> &middot;
+            policy <code>{{ policy.policy or '—' }}</code> &middot;
+            destructive migrations
+            {% if policy.allow_destructive %}<span class="text-danger">allowed</span>{% else %}<span class="text-success">blocked</span>{% endif %}
+            &middot; backup required {% if policy.require_backup %}yes{% else %}no{% endif %}
+        </p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('admin.api_module_updates', run=1) }}" class="btn btn-outline-info btn-sm fw-bold"
+           onclick="this.textContent='running…'">Run a read-only check</a>
+        <a href="{{ url_for('admin.modules_list') }}" class="btn btn-outline-light btn-sm fw-bold">
+            <i class="bi bi-puzzle me-1"></i>Registry
+        </a>
+    </div>
+</div>
+
+{% set checks = report.checks if report and report.checks else {} %}
+{% macro pill(status) %}
+{% if status in ['OK','PASS','READY'] %}<span class="badge bg-success-subtle text-success border border-success">{{ status }}</span>
+{% elif status in ['WARN','SKIPPED','NOT_RUN','MIGRATION_REQUIRED','SCHEMA_DRIFT','PENDING'] %}<span class="badge bg-warning-subtle text-warning border border-warning">{{ status }}</span>
+{% elif status %}<span class="badge bg-danger-subtle text-danger border border-danger">{{ status }}</span>
+{% else %}<span class="badge bg-secondary">—</span>{% endif %}
+{% endmacro %}
+
+{% if not report %}
+<div class="alert alert-info">
+    No update report yet. One is written on the next startup, or run
+    <code>python tools/dbupdate.py check</code>.
+</div>
+{% else %}
+<div class="card border-secondary bg-dark shadow-sm mb-3">
+    <div class="card-header bg-transparent border-secondary d-flex justify-content-between">
+        <span><i class="bi bi-clipboard-check me-2 text-info"></i>Run <code>{{ report.run_key }}</code></span>
+        <span>{{ pill(report.final_status) }}</span>
+    </div>
+    <div class="card-body">
+        <div class="row small">
+            <div class="col-md-3"><span class="text-white-50">Trigger</span><br>{{ report.trigger }}</div>
+            <div class="col-md-3"><span class="text-white-50">Mode</span><br>{{ report.mode }}</div>
+            <div class="col-md-3"><span class="text-white-50">Started</span><br>{{ report.started_at }}</div>
+            <div class="col-md-3"><span class="text-white-50">Duration</span><br>{{ report.duration_ms }} ms</div>
+            <div class="col-md-3 mt-2"><span class="text-white-50">App version</span><br>{{ report.app_version }}</div>
+            <div class="col-md-3 mt-2"><span class="text-white-50">Database</span><br><code>{{ report.database_path or '—' }}</code></div>
+            <div class="col-md-3 mt-2"><span class="text-white-50">Schema version</span><br>{{ report.schema_version_before }} → {{ report.schema_version_after }}</div>
+            <div class="col-md-3 mt-2"><span class="text-white-50">Backup</span><br>
+                {{ report.backup.path if report.backup else '—' }}
+            </div>
+        </div>
+        <hr class="border-secondary">
+        <div class="row small g-2">
+            {% for label, key in [('Schema validation','schema_validation'),('Data integrity','data_integrity'),('Regression','regression'),('Module health','module_health'),('Navigation','navigation'),('Module tests','module_tests'),('Backup','backup')] %}
+            {% set item = checks[key] if checks[key] else (report.backup if key == 'backup' else {}) %}
+            <div class="col-md-4">
+                {{ label }}: {{ pill(item.status if item and item.status else '—') }}
+                {% if item and item.detail %}<div class="text-white-50">{{ item.detail | truncate(120) }}</div>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+{% if report.blockers %}
+<div class="alert border border-danger bg-danger bg-opacity-10">
+    <h6 class="text-danger fw-bold"><i class="bi bi-stop-circle me-2"></i>{{ report.blockers | length }} blocker(s)</h6>
+    {% for blocker in report.blockers %}
+    <div class="small mb-2">
+        <div><span class="text-white-50">Step</span> <code>{{ blocker.step }}</code> {{ pill(blocker.status) }}</div>
+        {% for label, key in [('What failed','what'),('Why','why'),('Where','where'),('Module','module'),('Database object','database_object'),('Data risk','data_risk'),('Next action','next_action')] %}
+            {% if blocker[key] %}<div><span class="text-white-50">{{ label }}:</span> {{ blocker[key] }}</div>{% endif %}
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="card border-secondary bg-dark shadow-sm mb-3">
+    <div class="card-header bg-transparent border-secondary"><i class="bi bi-list-ol me-2 text-info"></i>Pipeline steps</div>
+    <div class="card-body p-0">
+        <table class="table table-dark table-sm mb-0 small">
+            <thead><tr><th class="ps-3">Step</th><th>Status</th><th>ms</th><th>Detail</th></tr></thead>
+            <tbody>
+            {% for step in report.pipeline %}
+            <tr>
+                <td class="ps-3"><code>{{ step.name }}</code><div class="text-white-50">{{ step.label }}</div></td>
+                <td>{{ pill(step.status) }}</td>
+                <td>{{ step.duration_ms }}</td>
+                <td class="text-white-50">{{ step.detail }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="card border-secondary bg-dark shadow-sm h-100">
+            <div class="card-header bg-transparent border-secondary"><i class="bi bi-clock-history me-2 text-info"></i>Recent runs</div>
+            <div class="card-body p-0">
+                <table class="table table-dark table-sm mb-0 small">
+                    <thead><tr><th class="ps-3">Run</th><th>Mode</th><th>Result</th><th>Applied</th></tr></thead>
+                    <tbody>
+                    {% for row in runs %}
+                    <tr>
+                        <td class="ps-3"><code>{{ row.run_key }}</code></td>
+                        <td>{{ row.mode }}</td>
+                        <td>{{ pill(row.final_status) }}</td>
+                        <td>{{ row.migrations_applied }}{% if row.migrations_failed %} <span class="text-danger">({{ row.migrations_failed }} failed)</span>{% endif %}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="text-white-50 ps-3">No runs recorded.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card border-secondary bg-dark shadow-sm h-100">
+            <div class="card-header bg-transparent border-secondary"><i class="bi bi-database-check me-2 text-info"></i>Applied revisions</div>
+            <div class="card-body p-0">
+                <table class="table table-dark table-sm mb-0 small">
+                    <thead><tr><th class="ps-3">Revision</th><th>Kind</th><th>Backup</th><th>At</th></tr></thead>
+                    <tbody>
+                    {% for row in history %}
+                    <tr>
+                        <td class="ps-3"><code>{{ row.revision }}</code>{% if row.error %} <span class="text-danger">error</span>{% endif %}</td>
+                        <td>{{ row.kind }}</td>
+                        <td class="text-white-50">{{ row.backup_path.split('/')[-1] if row.backup_path else '—' }}</td>
+                        <td class="text-white-50">{{ (row.completed_at or row.at or '')[:19] }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="text-white-50 ps-3">No revisions recorded.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<p class="small text-white-50 mt-3 mb-0">
+    Reports: <code>instance/logs/update-health-report.json</code>,
+    <code>schema-audit.json</code>, <code>module-registry-report.json</code>,
+    <code>migration-report.json</code> &mdash; archived under <code>instance/logs/update-history/</code>
+    with {{ policy.report_history if policy and policy.report_history else '12' }} runs retained.
+    Nothing here is applied from the browser; schema and data changes go through
+    <code>tools/dbupdate.py</code>.
+</p>
+{% endblock %}
