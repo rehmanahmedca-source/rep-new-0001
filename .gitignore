@@ -43,3 +43,6 @@ instance/logs/module-registry-report.json
 instance/logs/migration-report.json
 instance/logs/UPDATE_HEALTH_REPORT.md
 instance/logs/update-history/
+
+# Preserved legacy migration uploads (source workbooks kept for review/replay; regenerable, may contain client data)
+instance/migration/uploads/
