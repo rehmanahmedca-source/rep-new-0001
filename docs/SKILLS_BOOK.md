@@ -4,7 +4,13 @@
 **Repository:** rehmanahmedca-source/rep-new-0001  
 **Branch:** arena/01a046e8-rep-new-0001  
 **Date:** 2026-08-28  
-**Status:** DISCOVERY PHASE - STEP A  
+**Status:** STEP A (DISCOVERY) — ✅ COMPLETE · STEP B (DEEP QA AUDIT) — ✅ COMPLETE  
+
+> **STEP B results:** see [`docs/STEP_B_QA_TEST_REPORT.md`](STEP_B_QA_TEST_REPORT.md)
+> (machine-readable: `docs/step_b_qa_results.json`).
+> 1,023 assertions · 25 full transaction cycles across 5 QA clients ·
+> 140/161 GET routes exercised · **2 defects reproduced** (1 Critical, 1 High).
+> Harness: `tools/qa_stepb/`. Regression locks: `tests/test_stepb_qa_invariants.py`.
 
 ---
 
@@ -2618,16 +2624,25 @@ Based on QA_FULL_AUDIT.md:
 
 ## NEXT STEPS
 
-**IMMEDIATE (Today):**
-1. Complete this DISCOVERY REPORT (STEP A)
-2. Begin Phase 1: Emergency Fixes
-3. Restore database from migration artifacts
-4. Fix critical security vulnerabilities
+**COMPLETED:**
+1. ✅ DISCOVERY REPORT (STEP A) — this document
+2. ✅ DEEP QA AUDIT (STEP B) — `docs/STEP_B_QA_TEST_REPORT.md`
+
+**IMMEDIATE (from the STEP B findings):**
+1. `BUG-002` (Critical) — `/void_transaction` hard-deletes instead of soft-voiding,
+   which makes `/unvoid_transaction` and the `/void_audit` restore UI dead code and
+   permanently destroys transaction history. Decide: restore the soft void, or
+   remove the misleading "Void"/"Unvoid" affordances.
+2. `BUG-001` (High) — `app/services/payments_crud.py:334` `abs()`-normalises the
+   payment amount, so a negative Receipt is silently stored as a positive one.
+   Reject it instead, and point the user at `payment_type='Refund'`.
+3. Re-run `python -m tools.qa_stepb.run_audit` after each fix and drop the matching
+   `xfail` in `tests/test_stepb_qa_invariants.py`.
 
 **SHORT-TERM (This Week):**
-1. Complete Phase 1: All critical fixes
-2. Begin Phase 2: Core integrity fixes
-3. Start building Skills Book documentation
+1. Begin Phase 1: Emergency Fixes
+2. Restore database from migration artifacts
+3. Fix critical security vulnerabilities
 
 **MEDIUM-TERM (Next 2 Weeks):**
 1. Complete Phase 2: Core integrity
