@@ -1,6 +1,6 @@
 # Legacy migration schema-to-template mapping
 
-The migration subsystem is intentionally additive and does not accept a legacy database dump. The current application model is the source of truth.
+The migration subsystem is intentionally additive. A legacy database dump is no longer rejected silently: since the zero-row investigation (see `LEGACY_MIGRATION_INVESTIGATION_AND_FIX.md`) every workbook is first **profiled sheet-by-sheet** (`app/services/migration_discovery.py`), detected entities are **adapted** into the template shapes below through the configurable column-mapping layer, and any sheet that is not imported is reported with its real row count and an explicit reason. The current application model remains the source of truth; adaptation never bypasses it.
 
 | Template | Current entity / source facts | Dependency | Derived fields deliberately excluded |
 |---|---|---|---|
