@@ -53,10 +53,14 @@ can_view_plant_registry = true
 tables = ["plant_asset", "plant_asset_movement"]
 models_import = "blueprints.plant_registry.models"
 
+# kind is a declaration of intent ("schema" | "data" | "index"); the pipeline
+# refuses to run a revision whose file sets a different KIND, so the manifest can
+# never understate what a change does to business records.
 [[database.migrations]]
 version = "2026_001"
 slug = "create_plant_registry_tables"
 file = "migrations/2026_001_create_plant_registry_tables.py"
+kind = "schema"
 destructive = false
 requires_data_validation = false
 
@@ -64,7 +68,9 @@ requires_data_validation = false
 version = "2026_002"
 slug = "normalise_asset_location_codes"
 file = "migrations/2026_002_normalise_asset_locations.py"
+kind = "data"
 destructive = false
+# a data revision is only runnable because 2026_002 defines verify()
 requires_data_validation = true
 
 [health]

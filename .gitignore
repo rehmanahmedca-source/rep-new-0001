@@ -13,6 +13,8 @@ instance/health_snapshot.json
 instance/backups/
 # maintenance engine runtime storage (verified backup sets + staging temp)
 instance/storage/
+# scratch written while importing/exporting (reports are re-created per run)
+instance/.tmp/
 v44/*.db
 v44/*.db-wal
 v44/*.db-shm

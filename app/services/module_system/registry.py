@@ -314,6 +314,10 @@ class ModuleRegistry:
         return names
 
     # -- dependency graph --------------------------------------------------
+    def resolve_dependencies(self) -> None:
+        """Public entry to the dependency pass (see :meth:`_resolve_dependencies`)."""
+        self._resolve_dependencies()
+
     def _resolve_dependencies(self) -> None:
         specs = self.specs
         cycles = _find_cycles(specs)
@@ -514,6 +518,21 @@ class ModuleRegistry:
                 items.append(entry)
         items.sort(key=lambda item: (int(item.get("order") or 0), str(item.get("id") or "")))
         return items
+
+    # -- health -----------------------------------------------------------
+    def health(self, app=None, *, module_ids=None) -> dict:
+        """Per-module health: routes, tables, permissions and declared checks.
+
+        Kept on the registry because three callers need the same answer — the
+        update pipeline, ``/admin/modules`` and ``tools/dbupdate.py tests`` — and
+        a second implementation would drift.
+        """
+        from app.services.module_system.health import run_module_health
+
+        scope = app if app is not None else getattr(self, "app", None)
+        if scope is None:
+            return {"status": "SKIPPED", "detail": "no application to check against", "modules": {}}
+        return run_module_health(scope, self, module_ids=module_ids)
 
     # -- reporting --------------------------------------------------------
     def statuses(self) -> dict[str, list[str]]:

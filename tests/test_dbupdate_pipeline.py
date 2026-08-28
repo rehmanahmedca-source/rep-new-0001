@@ -633,6 +633,37 @@ def test_failed_revision_leaves_the_database_unchanged(app_factory, tmp_path):
     assert "deliberate failure" in json.dumps(report["migrations"])
 
 
+def test_declared_migration_kind_must_match_the_revision_file(tmp_path):
+    """``kind`` in module.toml is a promise about data risk, so it is checked.
+
+    A manifest that labels a data transform "schema" would talk the operator out
+    of the extra validation data revisions require (verify(), row counts,
+    financial totals), so the mismatch is loud instead of a footnote.
+    """
+    root = tmp_path / "kind_check"
+    path = _write_revision(root, "2026_002_backfill_locations.py", extra='KIND = "data"\n')
+
+    understated = MIG._revision_from_python(
+        path, module_id="kind_check", declared={"kind": "schema", "declared_kind": "schema"}
+    )
+    assert understated.kind == "data", "the revision file decides what a change actually does"
+    assert understated.kind_mismatch is True
+
+    checked = MIG.validate([understated], policy=policy.resolve(None), applied={})
+    codes = {problem["code"] for problem in checked[0].problems}
+    assert "declared_kind_mismatch" in codes
+    assert checked[0].status == "REQUIRES_ATTENTION", "a manifest that understates risk is not schedulable"
+
+    # A manifest that tells the truth is not punished for declaring the kind.
+    honest = MIG._revision_from_python(
+        path, module_id="kind_check", declared={"kind": "data", "declared_kind": "data"}
+    )
+    checked = MIG.validate([honest], policy=policy.resolve(None), applied={})
+    assert honest.kind_mismatch is False
+    assert "declared_kind_mismatch" not in {problem["code"] for problem in checked[0].problems}
+    assert honest.data_validation is True, "a data revision still owes a verify()"
+
+
 def test_module_with_pending_schema_work_is_not_marked_ready(app_factory, tmp_path):
     """Discovered but not-yet-migrated tables must never look healthy."""
     db_file = tmp_path / "pending.db"

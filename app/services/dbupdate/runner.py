@@ -159,7 +159,7 @@ class UpdatePipeline:
         self.ledger_usable = True
         #: whether the *policy* permits the legacy additive chain, independent of
         #: the mode — so a read-only check reports what an apply would decide.
-        self.legacy_permitted = (self.mode == MODE_APPLY) if include_legacy is None else bool(include_legacy)
+        self.legacy_permitted = True if include_legacy is None else bool(include_legacy)
 
     # -- helpers ----------------------------------------------------------
     def step(self, name: str, label: str) -> Step:
@@ -365,6 +365,9 @@ class UpdatePipeline:
         # The legacy ensure-chain legitimately closes missing tables/columns in
         # auto/guarded mode, so unapproved drift is only fatal when that chain
         # will not run (audit/manual policies).
+        # "would an apply run close this additively?" — deliberately *not*
+        # ``self.include_legacy``, which also encodes the current mode: a
+        # read-only check must report the decision an apply would make.
         legacy_will_run = self.legacy_permitted and self.policy.auto_apply
         step.data = {
             "total_revisions": len(self.revisions),

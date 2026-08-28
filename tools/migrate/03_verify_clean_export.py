@@ -103,7 +103,11 @@ def main() -> int:
 
     # 5. Counts and money sums vs legacy baseline
     print("\n5. COUNT & MONEY BASELINE vs legacy active data")
-    source_xls = C.load_workbook(Path(args.source))
+    legacy_source = C.resolve_source(args.source)
+    if legacy_source is None:
+        print(C.source_help(args.source))
+        return 2
+    source_xls = C.load_workbook(legacy_source)
     src_frames, src_report = C.compute_clean_frames(source_xls)
     for name in sorted(set(frames) & set(src_frames)):
         a, b = len(frames[name]), len(src_frames[name])

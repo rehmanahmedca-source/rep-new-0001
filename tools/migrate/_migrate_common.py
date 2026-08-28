@@ -22,6 +22,7 @@ Purge contract (mirrors the requirements):
 """
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -32,9 +33,76 @@ import pandas as pd
 # Source / target locations
 # --------------------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parents[2]
-LEGACY_XLSX = REPO_ROOT / "Realdata" / "ALLEXPORT-14-08-2026_05-51PM.xlsx"
 MIGRATION_DIR = REPO_ROOT / "instance" / "migration"
 META_SHEET = "__AMS_META__"
+
+#: Where a legacy ``ALLEXPORT-*.xlsx`` workbook is staged.  ``legacy data/`` is
+#: the folder the exports are dropped into in this repository; ``Realdata/`` was
+#: used historically and is still honoured.  A cleaned export (``*-CLEAN-*``) is
+#: never treated as a source.
+LEGACY_EXPORT_DIRS = (REPO_ROOT / "legacy data", REPO_ROOT / "Realdata")
+_EXPORT_DATE_RE = re.compile(r"ALLEXPORT-(\d{2})-(\d{2})-(\d{4})_(\d{1,2})-(\d{2})(AM|PM)", re.I)
+
+
+def _export_stamp(path: Path) -> tuple:
+    """Sortable (date, time) key parsed from the export file name."""
+    match = _EXPORT_DATE_RE.search(path.name)
+    if not match:
+        return (0, 0, 0, 0, 0)
+    day, month, year, hour, minute, meridiem = match.groups()
+    hour = int(hour) % 12 + (12 if meridiem.upper() == "PM" else 0)
+    return (int(year), int(month), int(day), hour, int(minute))
+
+
+def discover_legacy_export() -> Optional[Path]:
+    """The newest staged ALLEXPORT workbook, or ``None``.
+
+    ``AMS_LEGACY_EXPORT`` pins it explicitly, and every tool still accepts
+    ``--source``; this only replaces a hardcoded path that went stale the moment
+    the next export was dropped in.
+    """
+    pinned = os.environ.get("AMS_LEGACY_EXPORT", "").strip()
+    if pinned:
+        return Path(pinned).expanduser()
+    candidates: List[Path] = []
+    for directory in LEGACY_EXPORT_DIRS:
+        if not directory.is_dir():
+            continue
+        candidates.extend(
+            path
+            for path in directory.glob("ALLEXPORT*.xlsx")
+            if path.is_file() and "CLEAN" not in path.name.upper() and not path.name.startswith("~$")
+        )
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: (_export_stamp(path), path.stat().st_mtime))
+
+
+#: Default source workbook for steps 01-03 (see each tool's --source flag).
+LEGACY_XLSX = discover_legacy_export()
+
+
+def resolve_source(explicit: str = "") -> Optional[Path]:
+    """Turn a ``--source`` value (possibly empty) into an existing workbook path."""
+    text = str(explicit or "").strip()
+    path = Path(text).expanduser() if text and text.lower() != "none" else discover_legacy_export()
+    if path is None:
+        return None
+    path = Path(path)
+    return path if path.is_file() else None
+
+
+def source_help(explicit: str = "") -> str:
+    """Actionable message when no legacy export can be found."""
+    looked = ", ".join(str(directory) for directory in LEGACY_EXPORT_DIRS)
+    tried = f" (asked for: {explicit})" if str(explicit or "").strip() else ""
+    return (
+        "ERROR: no legacy ALLEXPORT workbook found"
+        + tried
+        + f".\n  staged exports are read from: {looked}\n"
+        + "  pass --source path/to/ALLEXPORT-DD-MM-YYYY_HH-MMPM.xlsx, or set AMS_LEGACY_EXPORT.\n"
+        + "  note: a cleaned export (*-CLEAN-*) is an output of step 02, never a source."
+    )
 
 # --------------------------------------------------------------------------
 # Table inventory (sheet names in the legacy export)

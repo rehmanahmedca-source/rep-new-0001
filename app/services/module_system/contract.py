@@ -138,6 +138,8 @@ class MigrationRef:
     version: str
     slug: str
     file: str
+    #: declared intent: "" (derive from the section), "schema", "data" or "index"
+    kind: str = ""
     destructive: bool = False
     requires_data_validation: bool = False
     checksum: str = ""
@@ -146,6 +148,7 @@ class MigrationRef:
     def as_dict(self) -> dict:
         return {
             "version": self.version,
+            "kind": self.kind,
             "slug": self.slug,
             "file": self.file,
             "destructive": self.destructive,
@@ -420,6 +423,9 @@ def _resolve_inside(root: Path, relative: str, problems: list[ManifestProblem], 
     return candidate
 
 
+_MIGRATION_KINDS = ("schema", "data", "index")
+
+
 def _migration_refs(
     entries: Any,
     *,
@@ -460,9 +466,21 @@ def _migration_refs(
             problems.append(
                 ManifestProblem("missing_file", f"{loc}.file", f"migration file not found: {file_rel}")
             )
+        declared_kind = str(entry.get("kind") or "").strip().lower()
+        if declared_kind and declared_kind not in _MIGRATION_KINDS:
+            problems.append(
+                ManifestProblem(
+                    "bad_migration_kind",
+                    f"{loc}.kind",
+                    f"'{declared_kind}' is not one of {', '.join(sorted(_MIGRATION_KINDS))}",
+                    "declare the kind only to state intent; the revision file decides",
+                )
+            )
+            declared_kind = ""
         refs.append(
             MigrationRef(
                 version=version,
+                kind=declared_kind,
                 slug=slug,
                 file=file_rel,
                 destructive=_as_bool(entry.get("destructive"), default=False),

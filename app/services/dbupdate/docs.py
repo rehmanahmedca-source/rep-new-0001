@@ -48,18 +48,19 @@ def generate(app=None, *, registry=None, write: bool = True) -> dict:
 
     core_tables, table_models = _metadata_tables()
     ledger_rows = []
+    runs: list = []
     if app is not None:
         try:
             from app.services.dbupdate import ledger
 
             with app.app_context():
-                ledger.ensure_ledger()
+                # Read-only on purpose: generating a document must never create
+                # tables in whatever database this process happens to point at.
+                ledger.ensure_ledger(allow_create=False)
                 ledger_rows = ledger.history(limit=200)
                 runs = ledger.recent_runs(limit=10)
         except Exception:
             ledger_rows, runs = [], []
-    else:
-        runs = []
 
     lines: list[str] = [
         GENERATED_BANNER,
@@ -191,30 +192,48 @@ def generate(app=None, *, registry=None, write: bool = True) -> dict:
 
     lines += [
         "",
-        "## Migration history (from the update ledger)",
+        "## Declared revisions (from the module manifests)",
         "",
-        "| Revision | Module | Kind | Status | Completed | Backup | Rows |",
-        "|---|---|---|---|---|---|---|",
+        "What each module *asks* to have applied.  Whether a revision has run",
+        "against **this** database is machine-local state — read it with",
+        "`python tools/dbupdate.py history`, or from the `ams_schema_migration`",
+        "table / `instance/logs/migration-report.json`.  It is deliberately not",
+        "printed here so this document stays reproducible from the repository",
+        "alone instead of reflecting whichever database regenerated it last.",
+        "",
+        "| Revision | Module | Kind | Destructive | Data validation | File |",
+        "|---|---|---|---|---|---|",
     ]
-    for row in ledger_rows[:60]:
-        lines.append(
-            f"| {_cell(row.get('revision'))} | {_cell(row.get('module_id'))} | {_cell(row.get('kind'))} | "
-            f"{_cell(row.get('status'))} | {_cell(row.get('completed_at'))} | {_cell(row.get('backup_path'))} | "
-            f"{_cell(row.get('affected_rows'))} |"
-        )
-    if not ledger_rows:
-        lines.append("| — | no revisions recorded yet | | | | | |")
+    data_refs = {
+        (spec.module_id, ref.version) for spec in specs for ref in spec.data_migrations
+    }
 
-    if runs:
-        lines += ["", "## Recent update runs", "", "| Run | Mode | Env/Policy | Result | Applied | Failed | Integrity |", "|---|---|---|---|---|---|---|"]
-        for row in runs:
-            env_policy = "{}/{}".format(row.get("environment"), row.get("policy"))
-            lines.append(
-                f"| {_cell(row.get('run_key'))} | {_cell(row.get('mode'))} | "
-                f"{_cell(env_policy)} | {_cell(row.get('final_status'))} | "
-                f"{_cell(row.get('migrations_applied'))} | {_cell(row.get('migrations_failed'))} | "
-                f"{_cell(row.get('integrity_status'))} |"
-            )
+    def _kind_for(ref, spec) -> str:
+        # the manifest's own declaration wins, then which list it sits in
+        return ref.kind or ("data" if (spec.module_id, ref.version) in data_refs else "schema")
+    declared = [
+        (spec, ref)
+        for spec in specs
+        for ref in (list(spec.migrations) + list(spec.data_migrations))
+    ]
+    for spec, ref in sorted(declared, key=lambda pair: (pair[0].module_id, pair[1].version)):
+        kind = _kind_for(ref, spec)
+        lines.append(
+            f"| {_cell(f'{spec.module_id}:{ref.version}')} | {_cell(spec.module_id)} | "
+            f"{_cell(kind)} | {'yes' if ref.destructive else 'no'} | "
+            f"{'required' if ref.requires_data_validation else '—'} | {_cell(ref.file)} |"
+        )
+    if not declared:
+        lines.append("| — | no module declares revisions yet | | | | |")
+    if ledger_rows or runs:
+        applied = [row for row in ledger_rows if row.get("status") == "APPLIED"]
+        lines += [
+            "",
+            (
+                f"_Local snapshot at generation time (not authoritative): this database "
+                f"recorded {len(applied)} applied revision(s) across {len(runs)} update run(s)._"
+            ),
+        ]
 
     lines += [
         "",

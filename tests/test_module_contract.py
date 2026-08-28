@@ -283,6 +283,27 @@ def test_migration_file_must_exist_and_stay_inside(pack):
     assert any(field.startswith("database.migrations") for field in fields)
 
 
+def test_declared_migration_kind_must_be_a_known_value(pack):
+    manifest = VALID_MODULE.format(mid="kind_mod", title="Kind") + textwrap.dedent(
+        """
+        [[database.migrations]]
+        version = "2026_001"
+        file = "migrations/2026_001_x.py"
+        kind = "table"
+
+        [[database.migrations]]
+        version = "2026_002"
+        file = "migrations/2026_002_y.py"
+        kind = "data"
+        """
+    )
+    spec = _validate(pack, manifest, "kind_mod")
+
+    assert "bad_migration_kind" in {problem.code for problem in spec.problems}
+    assert len(spec.migrations) == 2, "the accepted declaration must still be recorded"
+    assert [ref.kind for ref in spec.migrations] == ["", "data"]
+
+
 def test_bad_health_check_target_is_rejected(pack):
     manifest = VALID_MODULE.format(mid="health_mod", title="Health") + textwrap.dedent(
         """

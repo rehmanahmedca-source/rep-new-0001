@@ -35,9 +35,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", default=str(C.LEGACY_XLSX))
     args = ap.parse_args()
-    source = Path(args.source)
-    if not source.exists():
-        print(f"ERROR: source file not found: {source}")
+    source = C.resolve_source(args.source)
+    if source is None:
+        print(C.source_help(args.source))
         return 2
 
     xls = C.load_workbook(source)

@@ -87,7 +87,7 @@ def load_modules(app, blueprint_dir: str | os.PathLike = _MODULE_ROOT_DEFAULT):
             spec.enabled = override
             spec.status = "DISABLED" if not override else spec.status
             logger.info("module '%s' %s by operator override", spec.module_id, "disabled" if not override else "enabled")
-    registry._resolve_dependencies()
+    registry.resolve_dependencies()
 
     summary = registry.register(app)
     app._module_summary = summary

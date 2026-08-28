@@ -41,9 +41,9 @@ def main() -> int:
     ap.add_argument("--out", default="")
     args = ap.parse_args()
 
-    source = Path(args.source)
-    if not source.exists():
-        print(f"ERROR: source file not found: {source}")
+    source = C.resolve_source(args.source)
+    if source is None:
+        print(C.source_help(args.source))
         return 2
 
     out_path = Path(args.out) if args.out else (

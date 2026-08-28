@@ -60,6 +60,9 @@ class Revision:
     has_python: bool = False
     has_verify: bool = False
     data_validation: bool = False
+    #: set when module.toml declares a different kind than the revision file
+    declared_kind: str = ""
+    kind_mismatch: bool = False
     problems: list[dict] = field(default_factory=list)
     status: str = "PENDING"  # PENDING | APPLIED | MODIFIED | REQUIRES_ATTENTION
     applied_checksum: str = ""
@@ -77,6 +80,7 @@ class Revision:
             "file": self.path,
             "checksum": self.checksum,
             "destructive": self.destructive,
+            "declared_kind": self.declared_kind,
             "depends_on": list(self.depends_on),
             "status": self.status,
             "applied_checksum": self.applied_checksum,
@@ -152,7 +156,9 @@ def _revision_from_python(path: Path, *, module_id: str, declared: dict | None =
         match = _FILENAME_REVISION_RE.match(path.stem)
         revision = match.group("revision") if match else ""
     title = str(getattr(module, "TITLE", "") or declared.get("slug") or path.stem)
-    kind = str(getattr(module, "KIND", "") or declared.get("kind") or "schema").strip().lower()
+    file_kind = str(getattr(module, "KIND", "") or "").strip().lower()
+    kind = (file_kind or declared.get("kind") or "schema").strip().lower()
+    declared_kind = str(declared.get("declared_kind") or "").strip().lower()
     if kind not in ("schema", "data"):
         kind = "schema"
     sql = str(getattr(module, "SQL", "") or "")
@@ -181,6 +187,8 @@ def _revision_from_python(path: Path, *, module_id: str, declared: dict | None =
         has_python=callable(upgrade),
         has_verify=callable(verify),
         data_validation=bool(getattr(module, "DATA_VALIDATION", kind == "data")),
+        declared_kind=declared_kind,
+        kind_mismatch=bool(declared_kind and file_kind and declared_kind != file_kind),
         problems=problems,
     )
 
@@ -260,7 +268,8 @@ def collect(app=None, *, registry=None, migrations_dir: str | os.PathLike | None
                     "version": ref.version,
                     "slug": ref.slug,
                     "destructive": ref.destructive,
-                    "kind": "data" if ref in spec.data_migrations else "schema",
+                    "kind": ref.kind or ("data" if ref in spec.data_migrations else "schema"),
+                    "declared_kind": ref.kind,
                 }
                 try:
                     if path.suffix == ".sql":
@@ -328,6 +337,17 @@ def validate(revisions: list[Revision], *, policy, applied: dict[str, dict] | No
     """Attach lint + ledger-state problems to each revision and set its status."""
     applied = applied or {}
     for revision in revisions:
+        if revision.kind_mismatch:
+            revision.problems.append(
+                {
+                    "code": "declared_kind_mismatch",
+                    "message": (
+                        f"module.toml declares this revision as '{revision.declared_kind}' but the file "
+                        f"sets KIND = \"{revision.kind}\""
+                    ),
+                    "hint": "make them agree: the declared kind is what the audit and the reports use",
+                }
+            )
         if revision.sql:
             revision.problems.extend(
                 lint_sql(revision.sql, destructive_allowed=bool(policy.allow_destructive) and revision.destructive)

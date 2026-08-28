@@ -210,6 +210,28 @@ requires `--yes`. `full-update` without `--apply` is a preview.
 9. `docs/MODULE_REGISTRY.md` regenerated (automatic when revisions were applied);
 10. `git status` clean of runtime artefacts (reports are gitignored).
 
+## 8a. Bulk legacy loads are a separate, gated procedure
+
+A new `ALLEXPORT-*.xlsx` snapshot from the legacy system is staged in
+`legacy data/` (see `tools/migrate/README.md`). It is **never** touched by the
+update pipeline:
+
+* the pipeline migrates *structure* and small, reviewed data corrections — it is
+  not an importer, and an importer must never run at startup over a live ledger;
+* the legacy load is the gated 5-step procedure in `tools/migrate/`
+  (audit → clean export → verify the export → post-import SQL audit → load with
+  `--confirm`), because the app's raw importer restores the workbook verbatim
+  and the purge rules have to be applied first;
+* after such a load, run `python tools/dbupdate.py check` and
+  `python tools/dbupdate.py integrity`: the pipeline's row-count guard compares
+  the pre/post snapshots, so a load that dropped rows is visible in the report
+  rather than discovered weeks later in a reconciliation.
+
+`tools/dbupdate.py audit-schema` is also the command to run after a load: it
+tells you whether the imported database matches what the models and modules
+expect (extra columns and unmanaged tables are reported as observations, never
+"cleaned up").
+
 ## 9. What this pipeline will not do
 
 * no blind `create_all()` on a populated production database;
