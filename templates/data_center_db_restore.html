@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container-fluid ui-v2 import-export-page">
+  <header class="ui-page-header mt-3">
+    <div>
+      <h1 class="ui-title"><span class="ui-title-icon"><i class="bi bi-database-exclamation"></i></span> Disaster snapshot restore</h1>
+      <div class="ui-subtitle">Exact SQLite replace — only for a lost / empty / corrupt database.</div>
+    </div>
+    <span class="badge rounded-pill text-bg-danger px-3 py-2"><i class="bi bi-exclamation-octagon me-1"></i>Destructive</span>
+  </header>
+
+  {% include "data_center/_tabs.html" %}
+
+  <div class="alert alert-danger d-flex gap-3 align-items-start">
+    <i class="bi bi-x-octagon fs-4"></i>
+    <div class="small">
+      This replaces the <strong>entire</strong> live database file with the uploaded snapshot —
+      schema, indexes and all. It is <strong>not</strong> a merge. Before anything is touched the
+      current database is snapshotted to <code>instance/storage/data_backups/</code>, the upload is
+      integrity-checked, and the result is verified afterwards. For normal restores use the
+      <a href="{{ url_for('import_export.dc_restore_page') }}">JSON restore</a> page.
+    </div>
+  </div>
+
+  <section class="ui-card">
+    <div class="ui-card-header"><h3><i class="bi bi-upload"></i> Upload snapshot</h3></div>
+    <div class="ui-card-body">
+      <form method="post" action="{{ url_for('import_export.dc_db_restore_apply') }}" enctype="multipart/form-data">
+        <div class="mb-3">
+          <label class="form-label small text-white">AMS snapshot file (<code>database.sqlite3</code> or any AMS-exported <code>.db</code>)</label>
+          <input class="form-control" type="file" name="file" accept=".db,.sqlite3,.sqlite,application/vnd.sqlite3" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-warning" for="confirmDb">Type <code>RESTORE</code> to confirm</label>
+          <input class="form-control" id="confirmDb" name="confirm" autocomplete="off" placeholder="RESTORE">
+        </div>
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" id="ackDb" required>
+          <label class="form-check-label small text-white-50" for="ackDb">I understand the current database file will be replaced (a safety snapshot is taken first).</label>
+        </div>
+        <button class="btn btn-danger w-100 fw-bold"><i class="bi bi-database-down me-1"></i>Replace database from snapshot</button>
+      </form>
+    </div>
+  </section>
+</div>
+{% endblock %}

@@ -1,41 +1,25 @@
-"""pages — split from import_export.py."""
-from ._common import *  # noqa
+"""Data Center hub — replaces the old Excel-centric landing page."""
+from __future__ import annotations
 
-@import_export_bp.route('/')
+from flask import render_template
+from flask_login import login_required
+
+from ._common import *  # noqa
+from ._dc_common import dc_guard
+
+
+@import_export_bp.route("/")
 @login_required
 def import_export_page():
-    # ===== PANDAS DEPENDENCY CHECK =====
-    if not _validate_pandas_installed():
-        flash(
-            'CRITICAL: pandas library is not installed. '
-            'Run: pip install pandas>=2.3.3. '
-            'Import/export functionality is disabled.',
-            'danger'
-        )
-        return render_template('import_export_new.html', pandas_unavailable=True)
-    # ===== END DEPENDENCY CHECK =====
-    
-    full_raw_import_enabled = str(
-        os.environ.get('FULL_RAW_IMPORT_ENABLED', current_app.config.get('FULL_RAW_IMPORT_ENABLED', '0'))
-    ).strip().lower() in ['1', 'true', 'on', 'yes']
-    report_name = request.args.get('full_raw_import_report') or session.get('full_raw_import_report')
-    report_meta = session.get('full_raw_import_report_meta')
-    if report_name and report_meta and report_meta.get('name') == report_name:
-        full_raw_import_report = report_meta
-    elif report_name:
-        full_raw_import_report = {'name': report_name, 'created_at': None}
-    else:
-        full_raw_import_report = None
-    tenants = []
-    export_modules = [
-        {'key': key, 'label': cfg['label'], 'tables': cfg['tables']}
-        for key, cfg in EXPORT_MODULES.items()
-    ]
-    return render_template(
-        'import_export_new.html',
-        full_raw_import_enabled=full_raw_import_enabled,
-        full_raw_import_report=full_raw_import_report,
-        tenants=tenants,
-        export_modules=export_modules,
-    )
+    dc_guard()
+    from app.services.data_center_service import recent_runs, server_backups
 
+    runs = recent_runs(12)
+    backups = server_backups()[:6]
+    return render_template(
+        "data_center.html",
+        runs=runs,
+        backups=backups,
+        format_version="2026-08",
+        dc_active="home",
+    )

@@ -1,0 +1,84 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container-fluid ui-v2 import-export-page">
+  <header class="ui-page-header mt-3">
+    <div>
+      <h1 class="ui-title"><span class="ui-title-icon"><i class="bi bi-check-circle"></i></span> Run #{{ run.id }} — {{ run.kind }}</h1>
+      <div class="ui-subtitle">{{ run.filename or '—' }} · {{ run.created_at }} · {{ run.actor or 'unknown' }}</div>
+    </div>
+    <span class="badge rounded-pill text-bg-{{ 'success' if run.status == 'ok' else 'danger' }} px-3 py-2">{{ run.status }}</span>
+  </header>
+
+  {% include "data_center/_tabs.html" %}
+
+  {% if run.status == 'ok' %}
+  <div class="alert alert-success">
+    <i class="bi bi-check-circle me-1"></i>
+    {{ 'Legacy data merged' if run.kind == 'legacy' else 'Restore completed' if run.kind == 'restore' else 'Export/snapshot recorded' if run.kind == 'export' else 'Database replaced and verified' }}:
+    {{ run.tables }} tables, {{ run.rows }} rows written.
+    {% if summary.safety_backup %}<div class="small mt-1">Safety snapshot: <code>{{ summary.safety_backup }}</code></div>{% endif %}
+  </div>
+  {% else %}
+  <div class="alert alert-danger"><i class="bi bi-x-circle me-1"></i>{{ summary.get('error', 'Run failed.') }}</div>
+  {% endif %}
+
+  <div class="row g-4">
+    <div class="col-lg-6">
+      <section class="ui-card">
+        <div class="ui-card-header"><h3><i class="bi bi-clipboard-data"></i> Summary</h3></div>
+        <div class="ui-card-body small">
+          <table class="table table-sm">
+            <tbody>
+              <tr><td>Format version</td><td><code>{{ run.format_version_in or '—' }}</code> → <code>{{ run.format_version_out or '—' }}</code></td></tr>
+              <tr><td>Rows in file</td><td>{{ summary.get('summary', {}).get('rows_in_file', '—') }}</td></tr>
+              <tr><td>Rows written</td><td>{{ summary.get('summary', {}).get('rows_to_write', '—') }} ({{ summary.get('summary', {}).get('inserts', '—') }} insert / {{ summary.get('summary', {}).get('updates', '—') }} update)</td></tr>
+              <tr><td>Untouched tables</td><td>{{ summary.get('summary', {}).get('untouched_tables', '—') }}</td></tr>
+              <tr><td>Voided refused</td><td>{{ summary.get('summary', {}).get('voided_refused', '—') }}</td></tr>
+              <tr><td>Synthetic clients</td><td>{{ summary.get('summary', {}).get('synthetic_clients', '—') }}</td></tr>
+              <tr><td>Coercions</td><td>{{ summary.get('summary', {}).get('coercions', '—') }}</td></tr>
+              <tr><td>Filled columns</td><td>{{ summary.get('summary', {}).get('filled_columns', '—') }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {% if summary.verify %}
+      <section class="ui-card mt-4">
+        <div class="ui-card-header"><h3><i class="bi bi-shield-check"></i> Post-run verification</h3></div>
+        <div class="ui-card-body small">
+          <div>FK check: <span class="text-success">{{ 'clean' if not summary.verify.get('failures') else summary.verify['failures'] }}</span></div>
+          <div>Clients: {{ summary.verify.get('client_count') }} · Void rows present: {{ summary.verify.get('void_rows_present') }}</div>
+        </div>
+      </section>
+      {% endif %}
+    </div>
+
+    <div class="col-lg-6">
+      <section class="ui-card">
+        <div class="ui-card-header"><h3><i class="bi bi-table"></i> Table results</h3></div>
+        <div class="ui-card-body table-responsive">
+          <table class="table table-sm small">
+            <thead><tr><th>Table</th><th>In</th><th>Insert</th><th>Update</th><th>Out</th><th>Voided</th></tr></thead>
+            <tbody>
+              {% for tname, rec in (summary.get('tables') or {}).items() %}
+              <tr>
+                <td>{{ tname }}</td><td>{{ rec.get('in', 0) }}</td><td>{{ rec.get('inserts', 0) }}</td>
+                <td>{{ rec.get('updates', 0) }}</td><td>{{ rec.get('out', 0) }}</td><td>{{ rec.get('voided', 0) }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6" class="text-white-50">No table detail for this run.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <a class="btn btn-outline-warning" href="{{ url_for('import_export.dc_restore_page') }}"><i class="bi bi-box-arrow-in-down me-1"></i>Another restore</a>
+    <a class="btn btn-outline-info" href="{{ url_for('import_export.dc_history_page') }}"><i class="bi bi-clock-history me-1"></i>History</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('import_export.import_export_page') }}"><i class="bi bi-house-door me-1"></i>Data Center</a>
+  </div>
+</div>
+{% endblock %}

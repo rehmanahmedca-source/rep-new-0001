@@ -1,0 +1,153 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container-fluid ui-v2 import-export-page">
+  <header class="ui-page-header mt-3">
+    <div>
+      <h1 class="ui-title"><span class="ui-title-icon"><i class="bi bi-clipboard-check"></i></span>
+        Restore plan — {{ 'review before merge' if kind == 'legacy' else 'review before restore' }}</h1>
+      <div class="ui-subtitle">{{ upload.filename }} · format {{ plan.format_version_in }} → {{ plan.format_version_out }}
+        {% if plan.legacy_flat %}<span class="badge text-bg-secondary ms-1">legacy flat JSON</span>{% endif %}</div>
+    </div>
+  </header>
+
+  {% include "data_center/_tabs.html" %}
+
+  <div class="row g-4 mb-4">
+    <div class="col-md-3">
+      <div class="ui-card"><div class="ui-card-body text-center">
+        <div class="fs-3 fw-bold">{{ plan.summary.rows_to_write }}</div>
+        <div class="small text-white-50">rows to write</div>
+      </div></div>
+    </div>
+    <div class="col-md-3">
+      <div class="ui-card"><div class="ui-card-body text-center">
+        <div class="fs-3 fw-bold">{{ plan.summary.inserts }} <span class="text-white-50">/</span> {{ plan.summary.updates }}</div>
+        <div class="small text-white-50">inserts / updates</div>
+      </div></div>
+    </div>
+    <div class="col-md-3">
+      <div class="ui-card"><div class="ui-card-body text-center">
+        <div class="fs-3 fw-bold text-warning">{{ plan.summary.untouched_tables }}</div>
+        <div class="small text-white-50">tables left untouched</div>
+      </div></div>
+    </div>
+    <div class="col-md-3">
+      <div class="ui-card"><div class="ui-card-body text-center">
+        <div class="fs-3 fw-bold {{ 'text-warning' if plan.summary.voided_refused else 'text-success' }}">{{ plan.summary.voided_refused }}</div>
+        <div class="small text-white-50">voided rows refused</div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-7">
+      <section class="ui-card">
+        <div class="ui-card-header"><h3><i class="bi bi-table"></i> Per-table plan</h3></div>
+        <div class="ui-card-body table-responsive">
+          <table class="table table-sm small">
+            <thead><tr><th>Table</th><th>In</th><th>Insert</th><th>Update</th><th>Voided</th><th>Cascaded</th><th>Out</th></tr></thead>
+            <tbody>
+              {% for tname, rec in plan.tables.items() %}
+              <tr>
+                <td class="fw-bold">{{ tname }}</td>
+                <td>{{ rec.get('in', 0) }}</td>
+                <td>{{ rec.get('inserts', 0) }}</td>
+                <td>{{ rec.get('updates', 0) }}</td>
+                <td>{{ rec.get('voided', 0) }}</td>
+                <td>{{ rec.get('cascaded', 0) }}</td>
+                <td><strong>{{ rec.get('out', 0) }}</strong></td>
+              </tr>
+              {% else %}
+              <tr><td colspan="7" class="text-white-50">No writable tables in this file.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {% if plan.filled_missing %}
+      <section class="ui-card mt-4">
+        <div class="ui-card-header"><h3><i class="bi bi-list-check text-warning"></i> Columns this file does not know (defaulted)</h3></div>
+        <div class="ui-card-body table-responsive">
+          <table class="table table-sm small">
+            <thead><tr><th>Table</th><th>Column</th><th>Type</th><th>Policy</th></tr></thead>
+            <tbody>
+              {% for f in plan.filled_missing %}
+              <tr><td>{{ f.table }}</td><td>{{ f.column }}</td><td>{{ f.type or 'TEXT' }}</td><td>{{ f.policy }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      {% endif %}
+
+      {% if plan.coercions %}
+      <section class="ui-card mt-4">
+        <div class="ui-card-header"><h3><i class="bi bi-arrow-repeat text-info"></i> Coercions ({{ plan.coercions | length }})</h3></div>
+        <div class="ui-card-body overflow-auto" style="max-height: 260px;">
+          {% for c in plan.coercions[:200] %} <div class="small">· {{ c }}</div> {% endfor %}
+          {% if plan.coercions | length > 200 %}<div class="small text-white-50">… and {{ plan.coercions | length - 200 }} more</div>{% endif %}
+        </div>
+      </section>
+      {% endif %}
+
+      {% if plan.synthetic_clients %}
+      <section class="ui-card mt-4">
+        <div class="ui-card-header"><h3><i class="bi bi-person-plus text-info"></i> Synthetic clients ({{ plan.synthetic_clients | length }})</h3></div>
+        <div class="ui-card-body small">
+          {% for s in plan.synthetic_clients %}
+          <div>· <strong>{{ s.name }}</strong> ← unknown identity “{{ s.original }}” (id {{ s.id }})</div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+    </div>
+
+    <div class="col-lg-5">
+      <section class="ui-card">
+        <div class="ui-card-header"><h3><i class="bi bi-shield-check text-success"></i> Apply</h3></div>
+        <div class="ui-card-body">
+          <p class="small text-white-50">
+            Confirming runs the plan in <strong>one transaction</strong> after an automatic
+            safety snapshot. It is idempotent: applying this file twice is identical.
+          </p>
+          <form method="post" action="{{ action }}">
+            <div class="mb-3">
+              <label class="form-label small text-white" for="confirmInput">
+                Type <code>{{ 'APPLY' }}</code> to {{ 'merge' if kind == 'legacy' else 'restore' }}
+              </label>
+              <input class="form-control" id="confirmInput" name="confirm" autocomplete="off" placeholder="APPLY">
+            </div>
+            <button class="btn btn-{{ 'info' if kind == 'legacy' else 'warning' }} w-100 fw-bold">
+              <i class="bi bi-check2-square me-1"></i>{{ 'Merge Legacy Data' if kind == 'legacy' else 'Apply Restore' }}
+            </button>
+          </form>
+          <a class="btn btn-outline-secondary btn-sm w-100 mt-2" href="{{ back }}">Cancel — nothing was written</a>
+        </div>
+      </section>
+
+      <section class="ui-card mt-4">
+        <div class="ui-card-header"><h3><i class="bi bi-folder2"></i> Untouched tables ({{ plan.untouched_tables | length }})</h3></div>
+        <div class="ui-card-body overflow-auto small" style="max-height: 220px;">
+          {% for t in plan.untouched_tables %}
+          <div class="border-bottom border-secondary py-1 text-white-50"><i class="bi bi-lock me-1"></i>{{ t }}</div>
+          {% else %}
+          <div class="text-white-50">None.</div>
+          {% endfor %}
+        </div>
+      </section>
+
+      {% if plan.blanked_optional_fks %}
+      <section class="ui-card mt-4">
+        <div class="ui-card-header"><h3><i class="bi bi-link-45deg text-danger"></i> Optional FK blanked ({{ plan.blanked_optional_fks | length }})</h3></div>
+        <div class="ui-card-body overflow-auto small" style="max-height: 180px;">
+          {% for b in plan.blanked_optional_fks[:100] %}
+          <div>· {{ b.table }}#{{ b.id }}.{{ b.column }} ← {{ b.was }}</div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

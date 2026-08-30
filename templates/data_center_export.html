@@ -1,0 +1,93 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container-fluid ui-v2 import-export-page">
+  <header class="ui-page-header mt-3">
+    <div>
+      <h1 class="ui-title"><span class="ui-title-icon"><i class="bi bi-box-arrow-up"></i></span> Export</h1>
+      <div class="ui-subtitle">JSON = restore transport · XLSX = human view · SQLite = disaster snapshot.</div>
+    </div>
+  </header>
+
+  {% include "data_center/_tabs.html" %}
+
+  <form method="post" id="exportForm" class="mb-4">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label fw-bold text-white">Which tables?</label>
+        <div class="form-check mb-1">
+          <input class="form-check-input" type="radio" name="tables_scope" id="scopeAll" value="all" checked onchange="toggleTablePick()">
+          <label class="form-check-label" for="scopeAll">All tables (full archive)</label>
+        </div>
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="radio" name="tables_scope" id="scopePick" value="pick" onchange="toggleTablePick()">
+          <label class="form-check-label" for="scopePick">Selected tables only</label>
+        </div>
+        <div id="tablePick" class="border border-secondary rounded p-2 overflow-auto" style="max-height: 220px; display:none;">
+          {% for t in tables %}
+          <div class="form-check">
+            <input class="form-check-input table-chk" type="checkbox" name="tables" value="{{ t }}" id="tbl{{ t }}">
+            <label class="form-check-label small" for="tbl{{ t }}">{{ t }}</label>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label fw-bold text-white">Choose a format</label>
+        {% for key, title, desc, icon, color in formats %}
+        <button type="submit" formaction="{{ url_for('import_export.dc_export_' ~ key) }}"
+                class="btn btn-outline-{{ color }} w-100 mb-2 text-start">
+          <i class="bi {{ icon }} me-2"></i><strong>{{ title }}</strong>
+          <div class="small text-white-50">{{ desc }}</div>
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+  </form>
+
+  <section class="ui-card">
+    <div class="ui-card-header"><h3><i class="bi bi-info-circle"></i> What each export contains</h3></div>
+    <div class="ui-card-body small">
+      <table class="table table-sm">
+        <thead><tr><th>Format</th><th>Contents</th><th>Restorable?</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="badge text-bg-success">JSON</span></td>
+            <td>Schema block (columns, PKs, FKs) + name-keyed rows + format_version + sha256</td>
+            <td><strong>Yes</strong> — plan-first merge; enters cleanly into newer schemas</td>
+          </tr>
+          <tr>
+            <td><span class="badge text-bg-secondary">XLSX</span></td>
+            <td>One sheet per table + <code>__AMS_META__</code>; human-readable values</td>
+            <td>No — display only (Excel corrupts types and can silently drop columns)</td>
+          </tr>
+          <tr>
+            <td><span class="badge text-bg-warning">SQLite</span></td>
+            <td>Exact copy (VACUUM INTO): DDL, indexes, FK pragmas</td>
+            <td>Yes — disaster path, replaces the file after integrity checks + confirmation</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+<script>
+  function toggleTablePick() {
+    var pick = document.getElementById('tablePick');
+    var all = document.getElementById('scopeAll').checked;
+    pick.style.display = all ? 'none' : 'block';
+    document.querySelectorAll('.table-chk').forEach(function (c) {
+      c.disabled = all;
+      if (!all) c.checked = true;
+    });
+    var form = document.getElementById('exportForm');
+    if (all && !document.querySelector('input[name="tables"]')) {
+      var hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = 'tables';
+      hidden.value = 'all';
+      form.appendChild(hidden);
+    }
+  }
+  toggleTablePick();
+</script>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container-fluid ui-v2 import-export-page">
+  <header class="ui-page-header mt-3">
+    <div>
+      <h1 class="ui-title"><span class="ui-title-icon"><i class="bi bi-clock-history"></i></span> Data operations history</h1>
+      <div class="ui-subtitle">Every export, restore, legacy merge and snapshot — with actor, file and verdict.</div>
+    </div>
+  </header>
+
+  {% include "data_center/_tabs.html" %}
+
+  <div class="mb-3">
+    <a class="btn btn-sm {{ 'btn-warning' if not kind else 'btn-outline-secondary' }}" href="{{ url_for('import_export.dc_history_page') }}">All</a>
+    {% for k in ['export', 'restore', 'legacy', 'snapshot'] %}
+    <a class="btn btn-sm {{ 'btn-warning' if kind == k else 'btn-outline-secondary' }}" href="{{ url_for('import_export.dc_history_page', kind=k) }}">{{ k }}</a>
+    {% endfor %}
+  </div>
+
+  <section class="ui-card">
+    <div class="ui-card-body table-responsive">
+      <table class="table table-sm small align-middle">
+        <thead><tr><th>#</th><th>Kind</th><th>File</th><th>Version</th><th>Status</th><th>Tables</th><th>Rows</th><th>Actor</th><th>When</th></tr></thead>
+        <tbody>
+          {% for r in runs %}
+          <tr>
+            <td><a href="{{ url_for('import_export.dc_restore_result', run_id=r.id) }}">#{{ r.id }}</a></td>
+            <td><span class="badge text-bg-{{ 'success' if r.kind == 'export' else 'warning' if r.kind == 'restore' else 'info' if r.kind == 'legacy' else 'secondary' }}">{{ r.kind }}</span></td>
+            <td class="small">{{ (r.filename or '—') | truncate(36) }}</td>
+            <td class="small"><code>{{ r.format_version_in or '—' }}</code></td>
+            <td><span class="badge text-bg-{{ 'success' if r.status == 'ok' else 'danger' }}">{{ r.status }}</span></td>
+            <td>{{ r.tables }}</td>
+            <td>{{ r.rows }}</td>
+            <td class="small">{{ r.actor or '—' }}</td>
+            <td class="small">{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="9" class="text-white-50">No data operations recorded yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

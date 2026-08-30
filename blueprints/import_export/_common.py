@@ -37,8 +37,8 @@ MODULE_CONFIG = {
 
 
 MODULE_CONFIG = {
-    'name': 'Import/Export Module',
-    'description': 'Data import and export functionality',
+    'name': 'Data Center',
+    'description': 'Versioned export/restore/legacy data path (JSON transport, SQLite main)',
     'url_prefix': '/import_export',
     'enabled': True
 }
