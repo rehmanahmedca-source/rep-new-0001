@@ -1,0 +1,22 @@
+<div class="d-flex flex-wrap gap-2 mb-4">
+  <a href="{{ url_for('import_export.import_export_page') }}"
+     class="btn btn-sm {{ 'btn-warning' if dc_active == 'home' else 'btn-outline-secondary' }} fw-bold">
+    <i class="bi bi-house-door me-1"></i>Overview
+  </a>
+  <a href="{{ url_for('import_export.dc_export_page') }}"
+     class="btn btn-sm {{ 'btn-warning' if dc_active == 'export' else 'btn-outline-secondary' }} fw-bold">
+    <i class="bi bi-box-arrow-up me-1"></i>Export
+  </a>
+  <a href="{{ url_for('import_export.dc_restore_page') }}"
+     class="btn btn-sm {{ 'btn-warning' if dc_active == 'restore' else 'btn-outline-secondary' }} fw-bold">
+    <i class="bi bi-box-arrow-in-down me-1"></i>Restore
+  </a>
+  <a href="{{ url_for('import_export.dc_legacy_page') }}"
+     class="btn btn-sm {{ 'btn-warning' if dc_active == 'legacy' else 'btn-outline-secondary' }} fw-bold">
+    <i class="bi bi-database-gear me-1"></i>Legacy Data
+  </a>
+  <a href="{{ url_for('import_export.dc_history_page') }}"
+     class="btn btn-sm {{ 'btn-warning' if dc_active == 'history' else 'btn-outline-secondary' }} fw-bold">
+    <i class="bi bi-clock-history me-1"></i>History
+  </a>
+</div>

@@ -567,11 +567,12 @@
                 {% endif %}
 
                 {% if current_user.can_import_export or current_user.role == 'admin' %}
-                <a href="{{ url_for('import_export.import_export_page') }}" class="nav-link {{ 'active' if request.path.startswith('/import_export') }}" onclick="closeSidebar()">
-                    <i class="bi bi-arrow-left-right"></i> Import & Export
+                <div class="text-white-50 small fw-bold px-4 mt-4 mb-2 text-uppercase" style="font-size: 0.7rem;">Data</div>
+                <a href="{{ url_for('import_export.import_export_page') }}" class="nav-link {{ 'active' if request.path.startswith('/import_export') and not request.path.startswith('/import_export/legacy') }}" onclick="closeSidebar()">
+                    <i class="bi bi-database-check"></i> Data Center
                 </a>
-                <a href="{{ url_for('legacy_migration.dashboard') }}" class="nav-link {{ 'active' if request.path.startswith('/legacy-migration') }}" onclick="closeSidebar()">
-                    <i class="bi bi-database-gear"></i> Legacy Data Migration
+                <a href="{{ url_for('import_export.dc_legacy_page') }}" class="nav-link {{ 'active' if request.path.startswith('/import_export/legacy') }}" onclick="closeSidebar()">
+                    <i class="bi bi-database-gear"></i> Legacy Data
                 </a>
                 {% endif %}
 

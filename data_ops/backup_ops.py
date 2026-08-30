@@ -1,4 +1,14 @@
-"""Timestamped VACUUM INTO backups + JSON export + sha256 manifest. Never overwrite."""
+"""Timestamped VACUUM INTO backups + schema-aware JSON export + sha256 manifest.
+
+Never overwrite.  A backup folder always contains:
+
+| file              | role                                                     |
+|-------------------|----------------------------------------------------------|
+| database.sqlite3  | exact snapshot (disaster path)                           |
+| export.json       | schema-aware portable archive (restore/merge path)       |
+| manifest.json     | sha256 of both + row counts + verify result              |
+| REPORT.txt        | short human summary                                      |
+"""
 from __future__ import annotations
 
 import hashlib
@@ -8,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from data_ops.constants import FORMAT_VERSION
-from data_ops.verify import verify_database, row_counts
+from data_ops.verify import verify_database
 
 
 def _sha256(path: Path) -> str:
@@ -19,33 +29,20 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def _tables(conn: sqlite3.Connection) -> list[str]:
-    return [
-        r[0]
-        for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY 1"
-        )
-    ]
+def export_json(conn: sqlite3.Connection, dest: str | Path, **kwargs) -> dict:
+    """Schema-aware portability export (thin wrapper over data_ops.portable)."""
+    from data_ops.portable import export_json as _write
+
+    return _write(conn, dest, **kwargs)
 
 
-def export_json(conn: sqlite3.Connection, dest: Path) -> dict:
-    tables = {}
-    for name in _tables(conn):
-        cols = [r[1] for r in conn.execute(f'PRAGMA table_info("{name}")')]
-        rows = []
-        for tup in conn.execute(f'SELECT * FROM "{name}"'):
-            rows.append({c: tup[i] for i, c in enumerate(cols)})
-        tables[name] = rows
-    payload = {
-        "format_version": FORMAT_VERSION,
-        "exported_at": datetime.now(timezone.utc).isoformat(),
-        "tables": tables,
-    }
-    dest.write_text(json.dumps(payload, default=str, ensure_ascii=False), encoding="utf-8")
-    return {"tables": len(tables), "rows": sum(len(v) for v in tables.values())}
-
-
-def create_data_backup(db_path: str | Path, backup_root: str | Path, *, reason: str = "manual") -> dict:
+def create_data_backup(
+    db_path: str | Path,
+    backup_root: str | Path,
+    *,
+    reason: str = "manual",
+    app_version: str = "",
+) -> dict:
     db_path = Path(db_path)
     backup_root = Path(backup_root)
     backup_root.mkdir(parents=True, exist_ok=True)
@@ -76,7 +73,9 @@ def create_data_backup(db_path: str | Path, backup_root: str | Path, *, reason: 
 
     conn = sqlite3.connect(str(snap))
     try:
-        json_info = export_json(conn, dest / "export.json")
+        json_info = export_json(
+            conn, dest / "export.json", app_version=app_version, db_name=db_path.name
+        )
         v = verify_database(conn)
     finally:
         conn.close()
@@ -103,26 +102,27 @@ def create_data_backup(db_path: str | Path, backup_root: str | Path, *, reason: 
 
 def prune_backups(backup_root: str | Path, *, keep_daily: int = 30, keep_weekly: int = 52) -> list[str]:
     """Keep newest keep_daily daily folders; additionally keep one per ISO week up to keep_weekly."""
+    import shutil
+
     root = Path(backup_root)
     if not root.is_dir():
         return []
-    backups = sorted([p for p in root.iterdir() if p.is_dir() and p.name.startswith("backup_")], key=lambda p: p.name)
+    backups = sorted(
+        [p for p in root.iterdir() if p.is_dir() and p.name.startswith("backup_")],
+        key=lambda p: p.name,
+    )
     keep: set[Path] = set(backups[-keep_daily:])
     seen_weeks: list[str] = []
     for p in reversed(backups):
-        week = p.name[7:15]  # YYYYMMDD roughly
-        key = week[:8]
-        iso = key
-        if iso not in seen_weeks:
-            seen_weeks.append(iso)
+        key = p.name[7:15]
+        if key not in seen_weeks:
+            seen_weeks.append(key)
             keep.add(p)
         if len(seen_weeks) >= keep_weekly:
             break
     removed = []
     for p in backups:
         if p not in keep:
-            import shutil
-
             shutil.rmtree(p)
             removed.append(p.name)
     return removed
@@ -131,10 +131,11 @@ def prune_backups(backup_root: str | Path, *, keep_daily: int = 30, keep_weekly:
 def restore_data_backup(db_path: str | Path, backup_dir: str | Path, *, use_json: bool = True) -> dict:
     """Idempotent restore: JSON upsert on id inside one transaction.
 
-    DB snapshot is copied only when the target file is empty/missing.
-    JSON path is always safe to run twice.
+    The DB snapshot is copied only when the target file is missing/empty (an
+    empty-but-schema'd target keeps its schema and gets the JSON rows merged —
+    that is the whole point of the versioned restore).  Safe to run twice.
     """
-    from data_ops.loader import load_legacy_json
+    from data_ops.engine import execute_restore
 
     backup_dir = Path(backup_dir)
     db_path = Path(db_path)
@@ -152,15 +153,11 @@ def restore_data_backup(db_path: str | Path, backup_dir: str | Path, *, use_json
     conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA foreign_keys=ON")
     try:
-        report = load_legacy_json(conn, json_path)
-        verify = verify_database(conn)
-        report["verify"] = verify
-        if not verify["ok"]:
-            raise RuntimeError(f"post-restore verification failed: {verify['failures']}")
+        report = execute_restore(conn, json_path)
+        v = verify_database(conn)
+        report["verify"] = v
+        if not v["ok"]:
+            raise RuntimeError(f"post-restore verification failed: {v['failures']}")
         return report
     finally:
         conn.close()
-
-
-def counts_equal(a: dict, b: dict) -> bool:
-    return row_counts.__wrapped__ if False else a == b

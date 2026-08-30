@@ -1,0 +1,136 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container-fluid ui-v2 import-export-page">
+  <header class="ui-page-header mt-3">
+    <div>
+      <h1 class="ui-title">
+        <span class="ui-title-icon"><i class="bi bi-database-check"></i></span>
+        Data Center
+      </h1>
+      <div class="ui-subtitle">SQLite is the database · JSON is the restore &amp; merge transport · Excel is display only.</div>
+    </div>
+    <span class="badge rounded-pill text-bg-success px-3 py-2">
+      <i class="bi bi-shield-check me-1"></i>Versioned, schema-aware, transactional
+    </span>
+  </header>
+
+  {% include "data_center/_tabs.html" %}
+
+  <div class="alert alert-info d-flex gap-3 align-items-start mb-2" role="status">
+    <i class="bi bi-info-circle fs-4"></i>
+    <div class="small">
+      <strong>Restore policy:</strong> every JSON restore first builds a <em>plan</em> against the
+      live schema — new tables in the app are left untouched, missing columns are defaulted and
+      reported, unknown columns abort before anything is written, and a safety snapshot is taken
+      automatically. A restore is a <strong>merge</strong> (upsert on id), never a wipe.
+    </div>
+  </div>
+
+  <div class="row g-4 mb-4">
+    <div class="col-md-4">
+      <section class="ui-card h-100">
+        <div class="ui-card-header">
+          <h3><i class="bi bi-box-arrow-up text-success"></i> Export</h3>
+          <span class="badge text-bg-success">3 formats</span>
+        </div>
+        <div class="ui-card-body">
+          <div class="mb-2"><span class="badge text-bg-success">JSON</span> schema-aware archive — transport/restore/merge</div>
+          <div class="mb-2"><span class="badge text-bg-secondary">XLSX</span> readable workbook — display only, never restored</div>
+          <div class="mb-2"><span class="badge text-bg-warning">SQLite</span> exact snapshot — disaster recovery</div>
+          <a href="{{ url_for('import_export.dc_export_page') }}" class="btn btn-outline-success btn-sm w-100 mt-2">Open Export</a>
+        </div>
+      </section>
+    </div>
+    <div class="col-md-4">
+      <section class="ui-card h-100">
+        <div class="ui-card-header">
+          <h3><i class="bi bi-box-arrow-in-down text-warning"></i> Restore</h3>
+          <span class="badge text-bg-warning">plan → apply</span>
+        </div>
+        <div class="ui-card-body">
+          <div class="small text-white-50 mb-2">
+            Upload a JSON archive (or pick a server backup). Review the plan, then confirm with
+            <code>APPLY</code>. An old file restores cleanly into a new schema — nothing is lost,
+            nothing is truncated.
+          </div>
+          <a href="{{ url_for('import_export.dc_restore_page') }}" class="btn btn-outline-warning btn-sm w-100">Open Restore</a>
+        </div>
+      </section>
+    </div>
+    <div class="col-md-4">
+      <section class="ui-card h-100">
+        <div class="ui-card-header">
+          <h3><i class="bi bi-database-gear text-info"></i> Legacy Data</h3>
+          <span class="badge text-bg-info">JSON merge</span>
+        </div>
+        <div class="ui-card-body">
+          <div class="small text-white-50 mb-2">
+            Merge old databases / JSON exports with the same engine. Legacy SQLite files convert
+            to JSON in one step; unknown clients become <code>OrphanN</code> records — never skipped.
+          </div>
+          <a href="{{ url_for('import_export.dc_legacy_page') }}" class="btn btn-outline-info btn-sm w-100">Open Legacy Merge</a>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-7">
+      <section class="ui-card">
+        <div class="ui-card-header"><h3><i class="bi bi-clock-history"></i> Recent runs</h3></div>
+        <div class="ui-card-body table-responsive">
+          <table class="table table-sm align-middle">
+            <thead><tr><th>#</th><th>Kind</th><th>File</th><th>Status</th><th>Rows</th><th>Actor</th><th>When</th></tr></thead>
+            <tbody>
+              {% for r in runs %}
+              <tr>
+                <td><a href="{{ url_for('import_export.dc_restore_result', run_id=r.id) }}">#{{ r.id }}</a></td>
+                <td><span class="badge text-bg-{{ 'success' if r.kind == 'export' else 'warning' if r.kind == 'restore' else 'info' if r.kind == 'legacy' else 'secondary' }}">{{ r.kind }}</span></td>
+                <td class="small">{{ (r.filename or '—') | truncate(30) }}</td>
+                <td><span class="badge text-bg-{{ 'success' if r.status == 'ok' else 'danger' }}">{{ r.status }}</span></td>
+                <td>{{ r.rows }}</td>
+                <td class="small">{{ r.actor or '—' }}</td>
+                <td class="small">{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '—' }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="7" class="text-white-50 small">No data operations yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('import_export.dc_history_page') }}">Full history</a>
+        </div>
+      </section>
+    </div>
+    <div class="col-lg-5">
+      <section class="ui-card">
+        <div class="ui-card-header"><h3><i class="bi bi-folder2-open"></i> Server backup folders</h3></div>
+        <div class="ui-card-body">
+          {% for b in backups %}
+          <div class="d-flex justify-content-between align-items-center border-bottom border-secondary py-2">
+            <div class="small">
+              <div class="fw-bold">{{ b.folder }}</div>
+              <div class="text-white-50">{{ b.created_at }} · {{ b.tables }} tables / {{ b.rows }} rows · {{ b.reason }}</div>
+            </div>
+            <a class="btn btn-outline-warning btn-sm"
+               href="{{ url_for('import_export.dc_restore_page') }}">Restore</a>
+          </div>
+          {% else %}
+          <div class="text-white-50 small">No server backup folders yet — run a backup from the Export page or the CLI.</div>
+          {% endfor %}
+        </div>
+      </section>
+      <section class="ui-card mt-4">
+        <div class="ui-card-header"><h3><i class="bi bi-shield-lock"></i> Hard rules</h3></div>
+        <div class="ui-card-body small text-white-50">
+          <ul class="mb-0">
+            <li>Never write over a live database outside the data path.</li>
+            <li>Restores are idempotent — running the same file twice changes nothing.</li>
+            <li>Safety snapshot before every write; verify after every write.</li>
+            <li>Unknown columns/tables abort the whole operation.</li>
+          </ul>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}

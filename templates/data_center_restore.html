@@ -1,0 +1,81 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container-fluid ui-v2 import-export-page">
+  <header class="ui-page-header mt-3">
+    <div>
+      <h1 class="ui-title"><span class="ui-title-icon"><i class="bi bi-box-arrow-in-down"></i></span> Restore</h1>
+      <div class="ui-subtitle">JSON archive or server backup → plan → review → APPLY. Never a wipe.</div>
+    </div>
+  </header>
+
+  {% include "data_center/_tabs.html" %}
+
+  <div class="alert alert-warning d-flex gap-3 align-items-start mb-4">
+    <i class="bi bi-exclamation-triangle fs-4"></i>
+    <div class="small">
+      Restore <strong>merges</strong>: rows are upserted on their id, and tables/columns the file does
+      not know about stay exactly as they are. A safety snapshot is taken automatically before any
+      write, and the whole operation is one transaction — if anything fails, nothing changes.
+      To <em>replace</em> the entire database use the disaster snapshot page.
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-6">
+      <section class="ui-card h-100">
+        <div class="ui-card-header">
+          <h3><i class="bi bi-upload"></i> Upload a JSON archive</h3>
+          <span class="badge text-bg-warning">.json</span>
+        </div>
+        <div class="ui-card-body">
+          <form method="post" action="{{ url_for('import_export.dc_restore_plan') }}" enctype="multipart/form-data">
+            <div class="mb-3">
+              <label class="form-label small text-white">AMS JSON archive (from Export or a backup folder)</label>
+              <input class="form-control" type="file" name="file" accept=".json,application/json" required>
+            </div>
+            <button class="btn btn-outline-warning w-100">
+              <i class="bi bi-clipboard-check me-1"></i>Upload &amp; Build Plan
+            </button>
+          </form>
+        </div>
+      </section>
+    </div>
+
+    <div class="col-lg-6">
+      <section class="ui-card h-100">
+        <div class="ui-card-header">
+          <h3><i class="bi bi-folder2-open"></i> Or restore from a server backup</h3>
+          <span class="badge text-bg-secondary">export.json</span>
+        </div>
+        <div class="ui-card-body">
+          {% if backups %}
+          {% for b in backups %}
+          <form method="post" action="{{ url_for('import_export.dc_restore_plan_server') }}" class="mb-2">
+            <input type="hidden" name="folder" value="{{ b.folder }}">
+            <button class="btn btn-outline-secondary btn-sm w-100 text-start">
+              <i class="bi bi-database me-1"></i>
+              <strong>{{ b.folder }}</strong>
+              <span class="small text-white-50"> · {{ b.tables }} tables / {{ b.rows }} rows · {{ b.created_at }}</span>
+            </button>
+          </form>
+          {% endfor %}
+          {% else %}
+          <div class="text-white-50 small">No server backup folders found under <code>instance/storage/data_backups</code>.</div>
+          {% endif %}
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <section class="ui-card mt-4">
+    <div class="ui-card-header"><h3><i class="bi bi-database-exclamation"></i> Disaster snapshot (full replace)</h3></div>
+    <div class="ui-card-body d-flex justify-content-between align-items-center">
+      <div class="small text-white-50">
+        Exact <code>.sqlite3</code> replace for a lost/empty/corrupt database. Integrity-checked,
+        typed confirmation, automatic safety backup, post-verify.
+      </div>
+      <a class="btn btn-outline-danger btn-sm" href="{{ url_for('import_export.dc_db_restore_page') }}">Open</a>
+    </div>
+  </section>
+</div>
+{% endblock %}

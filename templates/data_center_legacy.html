@@ -1,0 +1,97 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container-fluid ui-v2 import-export-page">
+  <header class="ui-page-header mt-3">
+    <div>
+      <h1 class="ui-title"><span class="ui-title-icon"><i class="bi bi-database-gear"></i></span> Legacy data merge</h1>
+      <div class="ui-subtitle">Old database → JSON → merge with the same versioned engine. Nothing is ever skipped.</div>
+    </div>
+  </header>
+
+  {% include "data_center/_tabs.html" %}
+
+  <div class="row g-4 mb-4">
+    <div class="col-md-4">
+      <div class="ui-card h-100"><div class="ui-card-body">
+        <div class="fs-4"><i class="bi bi-arrow-down-up text-info"></i></div>
+        <div class="fw-bold mb-1">1 · Convert</div>
+        <div class="small text-white-50">Upload a legacy <code>.db/.sqlite3</code> and download its JSON archive (schema included).</div>
+      </div></div>
+    </div>
+    <div class="col-md-4">
+      <div class="ui-card h-100"><div class="ui-card-body">
+        <div class="fs-4"><i class="bi bi-clipboard-check text-warning"></i></div>
+        <div class="fw-bold mb-1">2 · Plan</div>
+        <div class="small text-white-50">Upload the JSON. The plan shows inserts/updates, orphans, voids, unknown columns — before any write.</div>
+      </div></div>
+    </div>
+    <div class="col-md-4">
+      <div class="ui-card h-100"><div class="ui-card-body">
+        <div class="fs-4"><i class="bi bi-check2-square text-success"></i></div>
+        <div class="fw-bold mb-1">3 · Merge</div>
+        <div class="small text-white-50">Confirm with APPLY. One transaction, safety snapshot first, idempotent.</div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-6">
+      <section class="ui-card">
+        <div class="ui-card-header"><h3><i class="bi bi-filetype-json"></i> Merge a JSON file</h3></div>
+        <div class="ui-card-body">
+          <form method="post" action="{{ url_for('import_export.dc_legacy_plan') }}" enctype="multipart/form-data">
+            <div class="mb-3">
+              <label class="form-label small text-white">Legacy JSON (AMS export or converted legacy database)</label>
+              <input class="form-control" type="file" name="file" accept=".json,application/json" required>
+            </div>
+            <button class="btn btn-outline-info w-100"><i class="bi bi-clipboard-check me-1"></i>Upload &amp; Build Merge Plan</button>
+          </form>
+        </div>
+      </section>
+    </div>
+    <div class="col-lg-6">
+      <section class="ui-card">
+        <div class="ui-card-header"><h3><i class="bi bi-database"></i> Convert a legacy database</h3></div>
+        <div class="ui-card-body">
+          <form method="post" action="{{ url_for('import_export.dc_legacy_convert') }}" enctype="multipart/form-data">
+            <div class="mb-3">
+              <label class="form-label small text-white">Legacy SQLite file (<code>.db / .sqlite3</code>)</label>
+              <input class="form-control" type="file" name="file" accept=".db,.sqlite3,.sqlite" required>
+            </div>
+            <button class="btn btn-outline-secondary w-100"><i class="bi bi-arrow-down-up me-1"></i>Convert to JSON archive</button>
+          </form>
+          <div class="small text-white-50 mt-2">
+            Excel workbooks are <strong>display only</strong> and are never imported by this engine.
+            Legacy Excel template migration remains available
+            <a href="{{ url_for('legacy_migration.dashboard') }}" class="text-info">here</a>
+            (advanced/deprecated path).
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <section class="ui-card mt-4">
+    <div class="ui-card-header"><h3><i class="bi bi-clock-history"></i> Recent legacy merges</h3></div>
+    <div class="ui-card-body table-responsive">
+      <table class="table table-sm small">
+        <thead><tr><th>#</th><th>File</th><th>Status</th><th>Rows</th><th>Actor</th><th>When</th></tr></thead>
+        <tbody>
+          {% for r in runs %}
+          <tr>
+            <td><a href="{{ url_for('import_export.dc_restore_result', run_id=r.id) }}">#{{ r.id }}</a></td>
+            <td>{{ (r.filename or '—') | truncate(40) }}</td>
+            <td><span class="badge text-bg-{{ 'success' if r.status == 'ok' else 'danger' }}">{{ r.status }}</span></td>
+            <td>{{ r.rows }}</td>
+            <td>{{ r.actor or '—' }}</td>
+            <td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-white-50">No legacy merges yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

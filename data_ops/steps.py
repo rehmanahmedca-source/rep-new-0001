@@ -25,6 +25,10 @@ class VersionSpec:
 # Registry keyed by the version the BACKUP was written under.
 # When loading an older file into FORMAT_VERSION, apply every spec newer than
 # the file's version, in order.
+#
+# NOTE: additive changes (new table, new column) need no spec — the restore
+# planner diffs the file's embedded schema against the live target schema and
+# reports/accepts the difference (new target tables stay untouched).
 REGISTRY: list[VersionSpec] = [
     VersionSpec(
         version="2026-04",
@@ -39,6 +43,8 @@ REGISTRY: list[VersionSpec] = [
             ),
         ],
     ),
+    # Marker: the schema-aware envelope. Empty steps — additive-only change.
+    VersionSpec(version="2026-08", steps=[]),
 ]
 
 
